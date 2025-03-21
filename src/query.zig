@@ -194,6 +194,14 @@ pub const Query = struct {
         return @intCast(std.hash.Wyhash.hash(0, @typeName(T)));
     }
 
+    pub fn readNullableField(reader: std.io.AnyReader, comptime T: type, allocator: std.mem.Allocator) !?T {
+        const len = try reader.readInt(i32, .big);
+        if (len < 0) return null; // NULL value
+
+        var limitedReader = std.io.limitedReader(reader, len);
+        return try readValueForType(limitedReader.reader(), T, allocator);
+    }
+
     fn readValueForType(reader: std.io.AnyReader, comptime FieldType: type, allocator: std.mem.Allocator) !FieldType {
         return switch (@typeInfo(FieldType)) {
             .int => |info| {
@@ -299,6 +307,28 @@ pub const Query = struct {
 
                     // Assuming the UUID struct has a fromString method
                     return FieldType.fromString(bytes) catch return error.InvalidUuid;
+                } else if (@hasDecl(FieldType, "isTimestamp") and FieldType.isTimestamp) {
+                    // Handle timestamp type
+                    const len = try reader.readInt(i32, .big);
+                    if (len < 0) return FieldType{}; // NULL timestamp, return empty
+
+                    const bytes = try allocator.alloc(u8, @intCast(len));
+                    defer allocator.free(bytes);
+                    const read = try reader.readAll(bytes);
+                    if (read != @as(usize, @intCast(len))) return error.IncompleteRead;
+
+                    return FieldType.fromPostgresText(bytes, allocator) catch return error.InvalidTimestamp;
+                } else if (@hasDecl(FieldType, "isInterval") and FieldType.isInterval) {
+                    // Handle interval type
+                    const len = try reader.readInt(i32, .big);
+                    if (len < 0) return FieldType{}; // NULL interval, return empty
+
+                    const bytes = try allocator.alloc(u8, @intCast(len));
+                    defer allocator.free(bytes);
+                    const read = try reader.readAll(bytes);
+                    if (read != @as(usize, @intCast(len))) return error.IncompleteRead;
+
+                    return FieldType.fromPostgresText(bytes, allocator) catch return error.InvalidInterval;
                 } else if (@hasDecl(FieldType, "fromPostgresText")) {
                     // Support for custom types that know how to parse themselves
                     const len = try reader.readInt(i32, .big);
