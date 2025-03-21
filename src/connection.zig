@@ -113,7 +113,7 @@ pub const Connection = struct {
     }
 
     pub fn isAlive(self: *Connection) bool {
-        return self.state == .Connected and self.stream != null;
+        return self.state == .Connected;
     }
 
     /// Generic method to send a PostgreSQL message
