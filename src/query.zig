@@ -209,14 +209,14 @@ pub const Query = struct {
                 if (len < 0) return 0;
                 const bytes = try allocator.alloc(u8, @intCast(len));
                 defer allocator.free(bytes);
-                const read = try reader.readAll(bytes);
-                if (read != @as(usize, @intCast(len))) return error.IncompleteRead;
+                const read = try reader.readAtLeast(bytes, @intCast(len));
+                if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
 
                 // Handle signed vs unsigned integers differently
                 if (info.signedness == .unsigned) {
-                    return std.fmt.parseUnsigned(FieldType, bytes, 10) catch return error.InvalidNumber;
+                    return std.fmt.parseUnsigned(FieldType, bytes[0..read], 10) catch return error.InvalidNumber;
                 } else {
-                    return std.fmt.parseInt(FieldType, bytes, 10) catch return error.InvalidNumber;
+                    return std.fmt.parseInt(FieldType, bytes[0..read], 10) catch return error.InvalidNumber;
                 }
             },
             .float => {
@@ -224,28 +224,28 @@ pub const Query = struct {
                 if (len < 0) return 0;
                 const bytes = try allocator.alloc(u8, @intCast(len));
                 defer allocator.free(bytes);
-                const read = try reader.readAll(bytes);
-                if (read != @as(usize, @intCast(len))) return error.IncompleteRead;
+                const read = try reader.readAtLeast(bytes, @intCast(len));
+                if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
 
-                return std.fmt.parseFloat(FieldType, bytes) catch return error.InvalidNumber;
+                return std.fmt.parseFloat(FieldType, bytes[0..read]) catch return error.InvalidNumber;
             },
             .bool => {
                 const len = try reader.readInt(i32, .big);
                 if (len < 0) return false;
                 const bytes = try allocator.alloc(u8, @intCast(len));
                 defer allocator.free(bytes);
-                const read = try reader.readAll(bytes);
-                if (read != @as(usize, @intCast(len))) return error.IncompleteRead;
+                const read = try reader.readAtLeast(bytes, @intCast(len));
+                if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
 
-                if (bytes.len == 1) {
+                if (read == 1) {
                     return switch (bytes[0]) {
                         't', 'T', '1' => true,
                         'f', 'F', '0' => false,
                         else => return error.InvalidBoolean,
                     };
-                } else if (std.mem.eql(u8, bytes, "true") or std.mem.eql(u8, bytes, "TRUE")) {
+                } else if (std.mem.eql(u8, bytes[0..read], "true") or std.mem.eql(u8, bytes[0..read], "TRUE")) {
                     return true;
-                } else if (std.mem.eql(u8, bytes, "false") or std.mem.eql(u8, bytes, "FALSE")) {
+                } else if (std.mem.eql(u8, bytes[0..read], "false") or std.mem.eql(u8, bytes[0..read], "FALSE")) {
                     return false;
                 }
 
@@ -258,9 +258,9 @@ pub const Query = struct {
                     if (len > 1024) return error.StringTooLong;
                     const bytes = try allocator.alloc(u8, @intCast(len));
                     // Note: No defer free here - this is intentional, as the caller must free this memory
-                    const read = try reader.readAll(bytes);
-                    if (read != @as(usize, @intCast(len))) return error.IncompleteRead;
-                    return bytes;
+                    const read = try reader.readAtLeast(bytes, @intCast(len));
+                    if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
+                    return bytes[0..read];
                 } else {
                     @compileError("Unsupported pointer type: " ++ @typeName(FieldType));
                 }
@@ -288,11 +288,11 @@ pub const Query = struct {
 
                 const bytes = try allocator.alloc(u8, @intCast(len));
                 defer allocator.free(bytes);
-                const read = try reader.readAll(bytes);
-                if (read != @as(usize, @intCast(len))) return error.IncompleteRead;
+                const read = try reader.readAtLeast(bytes, @intCast(len));
+                if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
 
                 // Try to convert string to enum
-                return std.meta.stringToEnum(FieldType, bytes) orelse error.InvalidEnum;
+                return std.meta.stringToEnum(FieldType, bytes[0..read]) orelse error.InvalidEnum;
             },
             .@"struct" => |struct_info| {
                 _ = struct_info;
@@ -302,11 +302,11 @@ pub const Query = struct {
 
                     const bytes = try allocator.alloc(u8, @intCast(len));
                     defer allocator.free(bytes);
-                    const read = try reader.readAll(bytes);
-                    if (read != @as(usize, @intCast(len))) return error.IncompleteRead;
+                    const read = try reader.readAtLeast(bytes, @intCast(len));
+                    if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
 
                     // Assuming the UUID struct has a fromString method
-                    return FieldType.fromString(bytes) catch return error.InvalidUuid;
+                    return FieldType.fromString(bytes[0..read]) catch return error.InvalidUuid;
                 } else if (@hasDecl(FieldType, "isTimestamp") and FieldType.isTimestamp) {
                     // Handle timestamp type
                     const len = try reader.readInt(i32, .big);
@@ -314,10 +314,10 @@ pub const Query = struct {
 
                     const bytes = try allocator.alloc(u8, @intCast(len));
                     defer allocator.free(bytes);
-                    const read = try reader.readAll(bytes);
-                    if (read != @as(usize, @intCast(len))) return error.IncompleteRead;
+                    const read = try reader.readAtLeast(bytes, @intCast(len));
+                    if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
 
-                    return FieldType.fromPostgresText(bytes, allocator) catch return error.InvalidTimestamp;
+                    return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidTimestamp;
                 } else if (@hasDecl(FieldType, "isInterval") and FieldType.isInterval) {
                     // Handle interval type
                     const len = try reader.readInt(i32, .big);
@@ -325,10 +325,10 @@ pub const Query = struct {
 
                     const bytes = try allocator.alloc(u8, @intCast(len));
                     defer allocator.free(bytes);
-                    const read = try reader.readAll(bytes);
-                    if (read != @as(usize, @intCast(len))) return error.IncompleteRead;
+                    const read = try reader.readAtLeast(bytes, @intCast(len));
+                    if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
 
-                    return FieldType.fromPostgresText(bytes, allocator) catch return error.InvalidInterval;
+                    return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidInterval;
                 } else if (@hasDecl(FieldType, "fromPostgresText")) {
                     // Support for custom types that know how to parse themselves
                     const len = try reader.readInt(i32, .big);
@@ -336,10 +336,10 @@ pub const Query = struct {
 
                     const bytes = try allocator.alloc(u8, @intCast(len));
                     defer allocator.free(bytes);
-                    const read = try reader.readAll(bytes);
-                    if (read != @as(usize, @intCast(len))) return error.IncompleteRead;
+                    const read = try reader.readAtLeast(bytes, @intCast(len));
+                    if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
 
-                    return FieldType.fromPostgresText(bytes, allocator) catch return error.InvalidCustomType;
+                    return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidCustomType;
                 } else {
                     @compileError("Unsupported struct type: " ++ @typeName(FieldType));
                 }

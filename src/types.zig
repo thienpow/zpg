@@ -95,6 +95,7 @@ pub const Error = error{
     ServerSignatureMismatch,
     NotConnected,
     StatementNotPrepared,
+    UnexpectedEOF,
 };
 
 pub const AuthType = enum(u32) {

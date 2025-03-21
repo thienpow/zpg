@@ -163,13 +163,15 @@ pub const Connection = struct {
         const len = std.mem.readInt(i32, header[1..5], .big);
         if (len < 4) return error.ProtocolError;
 
-        const len_usize: usize = @intCast(len); // Cast i32 to usize
-        const total_len: usize = len_usize + 1; // Add 1, result is usize
+        const len_usize: usize = @intCast(len);
+        const total_len: usize = len_usize + 1;
         if (buffer.len < total_len) return error.BufferTooSmall;
 
         std.mem.copyForwards(u8, buffer[0..5], &header);
         const payload = buffer[5..total_len];
-        _ = try self.stream.reader().readAll(payload);
+        const bytes_read = try self.stream.reader().readAtLeast(payload, payload.len);
+
+        if (bytes_read < payload.len) return error.UnexpectedEOF;
 
         return total_len;
     }
