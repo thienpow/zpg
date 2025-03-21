@@ -194,14 +194,6 @@ pub const Query = struct {
         return @intCast(std.hash.Wyhash.hash(0, @typeName(T)));
     }
 
-    pub fn readNullableField(reader: std.io.AnyReader, comptime T: type, allocator: std.mem.Allocator) !?T {
-        const len = try reader.readInt(i32, .big);
-        if (len < 0) return null; // NULL value
-
-        var limitedReader = std.io.limitedReader(reader, len);
-        return try readValueForType(limitedReader.reader(), T, allocator);
-    }
-
     fn readValueForType(reader: std.io.AnyReader, comptime FieldType: type, allocator: std.mem.Allocator) !FieldType {
         return switch (@typeInfo(FieldType)) {
             .int => |info| {
@@ -277,9 +269,41 @@ pub const Query = struct {
                 return value;
             },
             .array => |array_info| {
-                _ = array_info;
-                @compileError("Array types not yet supported: " ++ @typeName(FieldType));
-                // Implementation would need to parse PostgreSQL array literal format like {1,2,3}
+                const len = try reader.readInt(i32, .big);
+                if (len < 0) {
+                    if (array_info.size == .slice) {
+                        return @as(FieldType, &[_]array_info.child{}); // Empty slice for NULL
+                    } else {
+                        // For fixed-size, fill with defaults (recursively for nested arrays)
+                        return fillDefaultArray(FieldType, array_info, @as(array_info.child, 0));
+                    }
+                }
+
+                const bytes = try allocator.alloc(u8, @intCast(len));
+                defer allocator.free(bytes);
+                const read = try reader.readAtLeast(bytes, @intCast(len));
+                if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
+
+                if (bytes[0] != '{') return error.InvalidArrayFormat;
+                if (bytes[read - 1] != '}') return error.InvalidArrayFormat;
+
+                // Parse the array recursively
+                var pos: usize = 1; // Skip '{'
+                var elements = std.ArrayList(array_info.child).init(allocator);
+                defer elements.deinit();
+
+                pos = try parseArrayElements(bytes, &pos, read - 1, // Up to but not including '}'
+                    array_info.child, &elements, allocator);
+
+                // Return based on type
+                if (array_info.size == .slice) {
+                    return elements.toOwnedSlice();
+                } else {
+                    if (elements.items.len != array_info.len) return error.ArrayLengthMismatch;
+                    var result: FieldType = undefined;
+                    @memcpy(result[0..array_info.len], elements.items[0..array_info.len]);
+                    return result;
+                }
             },
             .@"enum" => |enum_info| {
                 _ = enum_info;
@@ -345,6 +369,115 @@ pub const Query = struct {
                 }
             },
             else => @compileError("Unsupported field type: " ++ @typeName(FieldType)),
+        };
+    }
+
+    // Helper to parse array elements recursively
+    fn parseArrayElements(
+        bytes: []u8,
+        pos: *usize, // Pointer to usize, mutable
+        end: usize,
+        comptime ElementType: type,
+        elements: *std.ArrayList(ElementType),
+        allocator: std.mem.Allocator,
+    ) !usize {
+        while (*pos < end) {
+            // Skip whitespace
+            while (*pos < end and bytes[*pos] == ' ') {
+                (*pos) += 1; // Increment pos to skip spaces
+            }
+            if (*pos >= end) break;
+
+            if (bytes[*pos] == '}') {
+                return *pos; // Return current position at end of array
+            }
+
+            if (bytes[*pos] == ',') {
+                (*pos) += 1; // Skip comma
+                continue;
+            }
+
+            // Handle NULL
+            if (*pos + 4 <= end and std.mem.eql(u8, bytes[*pos .. *pos + 4], "NULL")) {
+                try elements.append(fillDefaultValue(ElementType, @as(ElementType, 0), allocator));
+                (*pos) += 4; // Skip "NULL"
+                continue;
+            }
+
+            // Check for nested array
+            const element_type_info = @typeInfo(ElementType);
+            if (bytes[*pos] == '{' and (element_type_info == .array or element_type_info == .pointer)) {
+                var nested_elements = std.ArrayList(element_type_info.array.child).init(allocator);
+                defer nested_elements.deinit();
+                (*pos) += 1; // Skip '{'
+                (*pos) = try parseArrayElements(bytes, pos, end, element_type_info.array.child, &nested_elements, allocator);
+
+                if (element_type_info == .array) {
+                    if (nested_elements.items.len != element_type_info.array.len) return error.ArrayLengthMismatch;
+                    var nested_array: ElementType = undefined;
+                    @memcpy(nested_array[0..element_type_info.array.len], nested_elements.items[0..element_type_info.array.len]);
+                    try elements.append(nested_array);
+                } else { // .pointer (slice)
+                    try elements.append(try nested_elements.toOwnedSlice());
+                }
+                (*pos) += 1; // Skip '}'
+                continue;
+            }
+
+            // Parse a single element
+            var start = *pos;
+            const in_quotes = bytes[*pos] == '"';
+            if (in_quotes) start += 1;
+
+            while (*pos < end) {
+                if (in_quotes) {
+                    if (bytes[*pos] == '"') break;
+                } else if (bytes[*pos] == ',' or bytes[*pos] == '}') {
+                    break;
+                }
+                (*pos) += 1; // Move to next character
+            }
+
+            var element_end = *pos;
+            if (in_quotes) {
+                if (*pos >= end or bytes[*pos] != '"') return error.InvalidArrayFormat;
+                element_end -= 1; // Exclude closing quote
+                (*pos) += 1; // Skip closing quote
+            }
+
+            const element_str = bytes[start..element_end];
+            var element_fbs = std.io.fixedBufferStream(element_str);
+            const value = try readValueForType(element_fbs.reader().any(), ElementType, allocator);
+            try elements.append(value);
+        }
+        return *pos;
+    }
+
+    // Helper to ව
+
+    fn fillDefaultArray(comptime T: type, info: std.builtin.Type.Array, default: anytype) T {
+        var result: T = undefined;
+        const child_info = @typeInfo(info.child);
+        if (child_info == .array) {
+            for (0..info.len) |i| {
+                result[i] = fillDefaultArray(info.child, child_info.array, default);
+            }
+        } else {
+            @memset(result[0..info.len], default);
+        }
+        return result;
+    }
+
+    // Helper to fill default values for any type
+    fn fillDefaultValue(comptime T: type, default: T) T {
+        const type_info = @typeInfo(T);
+        return switch (type_info) {
+            .int, .float => default,
+            .bool => false,
+            .pointer => if (type_info.pointer.size == .slice) "" else @compileError("Unsupported pointer type"),
+            .array => fillDefaultArray(T, type_info.array, default),
+            .optional => null,
+            else => @compileError("Unsupported type for default value: " ++ @typeName(T)),
         };
     }
 };

@@ -11,9 +11,9 @@ This will execute all tests, including those for connection pooling (see `tests/
 ### Planned Features
 For a full-fledged PostgreSQL driver, `zpg` could be extended to include:
 
-- Support for array types
+- ~~Support for array types~~
 - Support for JSON/JSONB
-- ~~Support for timestamp and interval types~~ (currently deferred)
+- ~~Support for timestamp and interval types~~
 - Support for network types (`inet`, `cidr`)
 - Binary format support for more efficient data transfers
 
