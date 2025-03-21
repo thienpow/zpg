@@ -1,4 +1,4 @@
-* For a full-fledged PostgreSQL driver, you might also want to add:
+## For a full-fledged PostgreSQL driver, you might also want to add:
 
 - Support for array types
 - Support for JSON/JSONB
