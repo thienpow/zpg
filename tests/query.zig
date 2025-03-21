@@ -7,14 +7,13 @@ const Query = zpg.Query;
 const User = struct {
     id: i64,
     username: []const u8,
-    // Removed email since the query only selects id and username
 
     pub fn deinit(self: User, allocator: std.mem.Allocator) void {
         allocator.free(self.username);
     }
 };
 
-test "prepare and execute" {
+test "prepare and execute with benchmarks" {
     const allocator = std.testing.allocator;
     const config = Config{
         .host = "127.0.0.1",
@@ -27,13 +26,31 @@ test "prepare and execute" {
 
     var conn = try Connection.init(allocator, config);
     defer conn.deinit();
+
+    // Benchmark connection
+    var start_time = std.time.nanoTimestamp();
     try conn.connect();
+    const connect_time = std.time.nanoTimestamp() - start_time;
 
     var query = Query.init(allocator, &conn);
     defer query.deinit();
 
+    // Benchmark prepare
+    start_time = std.time.nanoTimestamp();
     try query.prepare("user_all", "SELECT id, username FROM Users", User);
+    const prepare_time = std.time.nanoTimestamp() - start_time;
+
+    // Benchmark execute
+    start_time = std.time.nanoTimestamp();
     const rows = try query.execute(User, "user_all", null);
+    const execute_time = std.time.nanoTimestamp() - start_time;
+
+    // Output benchmark results
+    std.debug.print("Benchmark results:\n", .{});
+    std.debug.print("  connect() = {d} ns\n", .{connect_time});
+    std.debug.print("  prepare() = {d} ns\n", .{prepare_time});
+    std.debug.print("  execute() = {d} ns\n", .{execute_time});
+
     if (rows) |result_rows| {
         defer allocator.free(result_rows);
         for (result_rows) |user| {
