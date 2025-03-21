@@ -1,0 +1,12 @@
+.{
+    .name = .zpg,
+    .version = "0.1.0",
+    .fingerprint = 0x5aceb9991d4cdbcd,
+    .dependencies = .{},
+    .paths = .{
+        "src/zpg.zig",
+        "build.zig",
+        "build.zig.zon",
+        "README.md",
+    },
+}
