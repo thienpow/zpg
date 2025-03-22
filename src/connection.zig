@@ -13,15 +13,11 @@ const TypeInfo = types.TypeInfo;
 const net_utils = @import("net.zig");
 const Config = @import("config.zig").Config;
 
-const StatementInfo = types.StatementInfo;
-const StatementCache = std.StringHashMap(StatementInfo);
-
 pub const Connection = struct {
     stream: net.Stream,
     allocator: mem.Allocator,
     state: ConnectionState = .Disconnected,
     config: Config,
-    statement_cache: std.StringHashMap(StatementInfo),
 
     /// PostgreSQL protocol version (3.0 by default)
     protocol_version: u32 = 0x30000,
@@ -36,7 +32,6 @@ pub const Connection = struct {
             .allocator = allocator,
             .state = .Disconnected,
             .config = config,
-            .statement_cache = StatementCache.init(allocator),
         };
     }
 
@@ -49,13 +44,6 @@ pub const Connection = struct {
         }
         self.stream.close();
         self.state = .Disconnected;
-
-        var it = self.statement_cache.iterator();
-        while (it.next()) |entry| {
-            self.allocator.free(entry.key_ptr.*); // Free dupe_name
-            self.allocator.free(entry.value_ptr.query); // Free dupe_query
-        }
-        self.statement_cache.deinit();
     }
 
     pub fn connect(self: *Connection) Error!void {

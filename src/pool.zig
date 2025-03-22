@@ -51,7 +51,7 @@ pub const ConnectionPool = struct {
     available_count: usize,
 
     /// Connection timeout in milliseconds (0 = no timeout)
-    timeout_ms: u64 = 5000,
+    timeout_ms: u64 = 0,
 
     /// Initializes a new connection pool with the specified configuration and size
     pub fn init(allocator: Allocator, config: Config, size: usize) PoolError!ConnectionPool {

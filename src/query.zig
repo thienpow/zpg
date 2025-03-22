@@ -5,12 +5,13 @@ const types = @import("types.zig");
 const StatementInfo = types.StatementInfo;
 const Error = types.Error;
 
+const Param = @import("param.zig").Param;
+
 const Allocator = std.mem.Allocator;
 
 pub const Query = struct {
     conn: *Connection,
     allocator: Allocator,
-    portal_name: []const u8 = "portal",
 
     pub fn init(allocator: Allocator, conn: *Connection) Query {
         return Query{
@@ -23,158 +24,15 @@ pub const Query = struct {
         _ = self;
     }
 
-    pub fn prepare(self: *Query, name: []const u8, sql: []const u8, comptime T: type) !void {
-        if (self.isStatementCached(name)) {
-            return;
-        }
-
-        try self.sendParseMessage(name, sql);
-        try self.sendSyncMessage();
-        try self.processParseResponses();
-        try self.cacheStatement(name, sql, T);
+    pub fn execute(self: *Query, comptime T: type, sql: []const u8) !?[]T {
+        try self.conn.sendMessage('Q', sql, true);
+        return try self.processExecuteResponses(T);
     }
 
-    /// Executes a prepared statement with the given parameters and returns the result as an array of struct type T.
-    ///
-    /// This function sends bind and execute messages to the PostgreSQL server, processes the response,
-    /// and converts the rows into an array of type T. The structure of T must match the columns
-    /// returned by the query.
-    ///
-    /// Performance tips:
-    /// - For large datasets, it's recommended to first run a `SELECT COUNT(*)` query and pass the
-    ///   result as the `count` parameter to pre-allocate memory, which significantly improves
-    ///   performance and reduces memory fragmentation.
-    /// - Avoid running generic `SELECT * FROM table` queries without providing a count, as this
-    ///   can lead to multiple allocations and memory reallocations for large result sets.
-    ///
-    /// Params:
-    ///   - T: The struct type that each row will be converted to
-    ///   - name: The name of the prepared statement to execute
-    ///   - params: Optional array of parameter values to bind to the statement
-    ///   - count: Optional pre-determined row count for memory pre-allocation
-    ///
-    /// Returns:
-    ///   - If rows are found: An owned slice of type []T that the caller must free
-    ///   - If no rows are found: null
-    ///   - On error: the appropriate error
-    ///
-    /// Errors:
-    ///   - StatementNotPrepared: If the statement has not been prepared
-    ///   - ColumnCountMismatch: If the column count doesn't match the field count in T
-    ///   - StructTypeMismatch: If the statement's expected return type doesn't match T
-    ///   - OutOfMemory: If memory allocation fails
-    ///   - ProtocolError: If there's an error in the communication protocol
-    pub fn execute(self: *Query, comptime T: type, name: []const u8, params: ?[][]const u8, count: ?usize) !?[]T {
-        if (!self.isStatementCached(name)) {
-            return error.StatementNotPrepared;
-        }
-
-        try self.sendBindMessage(name, params);
-        try self.sendExecuteMessage();
-        try self.sendSyncMessage();
-
-        var rows = if (count) |c|
-            try std.ArrayList(T).initCapacity(self.allocator, c)
-        else
-            std.ArrayList(T).init(self.allocator);
-        defer rows.deinit();
-
-        try self.processExecuteResponses(T, &rows, name);
-
-        const owned_slice = try rows.toOwnedSlice();
-        if (owned_slice.len == 0) {
-            return null;
-        }
-        return owned_slice;
-    }
-
-    fn sendSyncMessage(self: *Query) !void {
-        try self.conn.sendMessage('S', "", false);
-    }
-
-    fn sendParseMessage(self: *Query, name: []const u8, sql: []const u8) !void {
-        var buffer = std.ArrayList(u8).init(self.allocator);
-        defer buffer.deinit();
-        const writer = buffer.writer();
-
-        try writer.writeAll(name);
-        try writer.writeByte(0);
-        try writer.writeAll(sql);
-        try writer.writeByte(0);
-        try writer.writeInt(u16, 0, .big);
-
-        try self.conn.sendMessage('P', buffer.items, false);
-    }
-
-    fn sendBindMessage(self: *Query, name: []const u8, params: ?[]const []const u8) !void {
-        var buffer = std.ArrayList(u8).init(self.allocator);
-        defer buffer.deinit();
-        const writer = buffer.writer();
-
-        try writer.writeAll(self.portal_name);
-        try writer.writeByte(0);
-        try writer.writeAll(name);
-        try writer.writeByte(0);
-
-        const param_count = if (params) |p| p.len else 0;
-        try writer.writeInt(u16, @intCast(param_count), .big);
-        for (0..param_count) |_| {
-            try writer.writeInt(u16, 0, .big);
-        }
-        try writer.writeInt(u16, @intCast(param_count), .big);
-        if (params) |p| {
-            for (p) |param| {
-                try writer.writeInt(i32, @intCast(param.len), .big);
-                try writer.writeAll(param);
-            }
-        }
-        try writer.writeInt(u16, 0, .big);
-
-        try self.conn.sendMessage('B', buffer.items, false);
-    }
-
-    fn sendExecuteMessage(self: *Query) !void {
-        var buffer = std.ArrayList(u8).init(self.allocator);
-        defer buffer.deinit();
-        const writer = buffer.writer();
-
-        try writer.writeAll(self.portal_name);
-        try writer.writeByte(0);
-        try writer.writeInt(i32, 0, .big);
-
-        try self.conn.sendMessage('E', buffer.items, false);
-    }
-
-    fn processParseResponses(self: *Query) !void {
-        var buffer: [1024]u8 = undefined;
-
-        while (true) {
-            const msg_len = try self.conn.readMessage(&buffer);
-            var fbs = std.io.fixedBufferStream(buffer[0..msg_len]);
-            const reader = fbs.reader();
-            const msg_type = try reader.readByte();
-
-            switch (msg_type) {
-                '1' => {
-                    //std.debug.print("ParseComplete\n", .{})
-                },
-                'Z' => {
-                    break;
-                },
-                'E' => return error.QueryFailed,
-                else => return error.ProtocolError,
-            }
-        }
-    }
-
-    fn processExecuteResponses(self: *Query, comptime T: type, rows: *std.ArrayList(T), name: []const u8) !void {
+    fn processExecuteResponses(self: *Query, comptime T: type) !?[]T {
         var buffer: [4096]u8 = undefined;
-
-        const stmt_info = self.conn.statement_cache.get(name) orelse return error.StatementNotPrepared;
-        const expected_type_id = typeId(T);
-        if (stmt_info.type_id != expected_type_id) {
-            return error.StructTypeMismatch;
-        }
+        var rows = std.ArrayList(T).init(self.allocator);
+        defer rows.deinit();
 
         const type_info = @typeInfo(T);
         if (type_info != .@"struct") {
@@ -186,12 +44,16 @@ pub const Query = struct {
 
         while (true) {
             const result = try self.conn.readMessageType(&buffer);
+
             const msg_type = result.type;
             const msg_len = result.len;
             var fbs = std.io.fixedBufferStream(buffer[5..msg_len]);
             const reader = fbs.reader().any();
 
             switch (msg_type) {
+                'T', 'C' => {
+                    // ignore (Row Description)
+                },
                 'D' => {
                     const column_count = try reader.readInt(u16, .big);
                     if (column_count != expected_columns) return error.ColumnCountMismatch;
@@ -202,37 +64,16 @@ pub const Query = struct {
                     }
                     try rows.append(instance);
                 },
-                '2', 'C' => {}, // Ignore BindComplete and CommandComplete
                 'Z' => {
-                    // const slice = try rows.toOwnedSlice();
-                    // return slice;
-                    return;
+                    const owned_slice = try rows.toOwnedSlice();
+                    if (owned_slice.len == 0) {
+                        return null;
+                    }
+                    return owned_slice;
                 },
                 else => return error.ProtocolError,
             }
         }
-    }
-
-    fn cacheStatement(self: *Query, name: []const u8, query: []const u8, comptime T: type) !void {
-        const dupe_name = try self.allocator.dupe(u8, name);
-        errdefer self.allocator.free(dupe_name);
-        const dupe_query = try self.allocator.dupe(u8, query);
-        errdefer self.allocator.free(dupe_query);
-
-        const info = StatementInfo{
-            .query = dupe_query,
-            .type_id = typeId(T),
-        };
-
-        try self.conn.statement_cache.put(dupe_name, info);
-    }
-
-    fn isStatementCached(self: *const Query, name: []const u8) bool {
-        return self.conn.statement_cache.contains(name);
-    }
-
-    fn typeId(comptime T: type) usize {
-        return @intCast(std.hash.Wyhash.hash(0, @typeName(T)));
     }
 
     fn readValueForType(reader: std.io.AnyReader, comptime FieldType: type, allocator: std.mem.Allocator) !FieldType {
