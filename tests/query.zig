@@ -42,7 +42,7 @@ test "prepare and execute with benchmarks" {
 
     // Benchmark execute
     start_time = std.time.nanoTimestamp();
-    const rows = try query.execute(User, "user_all", null);
+    const rows = try query.execute(User, "user_all", null, null);
     const execute_time = std.time.nanoTimestamp() - start_time;
 
     // Output benchmark results

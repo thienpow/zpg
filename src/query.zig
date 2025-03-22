@@ -34,7 +34,37 @@ pub const Query = struct {
         try self.cacheStatement(name, sql, T);
     }
 
-    pub fn execute(self: *Query, comptime T: type, name: []const u8, params: ?[][]const u8) !?[]T {
+    /// Executes a prepared statement with the given parameters and returns the result as an array of struct type T.
+    ///
+    /// This function sends bind and execute messages to the PostgreSQL server, processes the response,
+    /// and converts the rows into an array of type T. The structure of T must match the columns
+    /// returned by the query.
+    ///
+    /// Performance tips:
+    /// - For large datasets, it's recommended to first run a `SELECT COUNT(*)` query and pass the
+    ///   result as the `count` parameter to pre-allocate memory, which significantly improves
+    ///   performance and reduces memory fragmentation.
+    /// - Avoid running generic `SELECT * FROM table` queries without providing a count, as this
+    ///   can lead to multiple allocations and memory reallocations for large result sets.
+    ///
+    /// Params:
+    ///   - T: The struct type that each row will be converted to
+    ///   - name: The name of the prepared statement to execute
+    ///   - params: Optional array of parameter values to bind to the statement
+    ///   - count: Optional pre-determined row count for memory pre-allocation
+    ///
+    /// Returns:
+    ///   - If rows are found: An owned slice of type []T that the caller must free
+    ///   - If no rows are found: null
+    ///   - On error: the appropriate error
+    ///
+    /// Errors:
+    ///   - StatementNotPrepared: If the statement has not been prepared
+    ///   - ColumnCountMismatch: If the column count doesn't match the field count in T
+    ///   - StructTypeMismatch: If the statement's expected return type doesn't match T
+    ///   - OutOfMemory: If memory allocation fails
+    ///   - ProtocolError: If there's an error in the communication protocol
+    pub fn execute(self: *Query, comptime T: type, name: []const u8, params: ?[][]const u8, count: ?usize) !?[]T {
         if (!self.isStatementCached(name)) {
             return error.StatementNotPrepared;
         }
@@ -42,7 +72,20 @@ pub const Query = struct {
         try self.sendBindMessage(name, params);
         try self.sendExecuteMessage();
         try self.sendSyncMessage();
-        return try self.processExecuteResponses(T, name);
+
+        var rows = if (count) |c|
+            try std.ArrayList(T).initCapacity(self.allocator, c)
+        else
+            std.ArrayList(T).init(self.allocator);
+        defer rows.deinit();
+
+        try self.processExecuteResponses(T, &rows, name);
+
+        const owned_slice = try rows.toOwnedSlice();
+        if (owned_slice.len == 0) {
+            return null;
+        }
+        return owned_slice;
     }
 
     fn sendSyncMessage(self: *Query) !void {
@@ -124,10 +167,8 @@ pub const Query = struct {
         }
     }
 
-    fn processExecuteResponses(self: *Query, comptime T: type, name: []const u8) !?[]T {
+    fn processExecuteResponses(self: *Query, comptime T: type, rows: *std.ArrayList(T), name: []const u8) !void {
         var buffer: [4096]u8 = undefined;
-        var rows = std.ArrayList(T).init(self.allocator);
-        defer rows.deinit();
 
         const stmt_info = self.conn.statement_cache.get(name) orelse return error.StatementNotPrepared;
         const expected_type_id = typeId(T);
@@ -163,8 +204,9 @@ pub const Query = struct {
                 },
                 '2', 'C' => {}, // Ignore BindComplete and CommandComplete
                 'Z' => {
-                    const slice = try rows.toOwnedSlice();
-                    return slice;
+                    // const slice = try rows.toOwnedSlice();
+                    // return slice;
+                    return;
                 },
                 else => return error.ProtocolError,
             }

@@ -38,7 +38,7 @@ test "simple pool usage" {
         // Create array and pass slice
         var params = [_][]const u8{"1"};
         const start_time = std.time.nanoTimestamp();
-        const results = try query.execute(User, "user_one", params[0..]);
+        const results = try query.execute(User, "user_one", params[0..], 1);
         const execute_time = std.time.nanoTimestamp() - start_time;
         defer {
             // Free each User's username
@@ -50,8 +50,8 @@ test "simple pool usage" {
                 allocator.free(users);
             }
         }
+        std.debug.print("\nTEST: simple pool usage, results.len {}\n", .{results.?.len});
         std.debug.print("Benchmark results:\n", .{});
         std.debug.print("  execute() = {d} ns\n", .{execute_time});
-        std.debug.print("TEST: simple pool usage, results.len {}", .{results.?.len});
     }
 }
