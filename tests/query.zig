@@ -42,7 +42,7 @@ test "prepare and execute with benchmarks" {
 
     // Benchmark execute
     start_time = std.time.nanoTimestamp();
-    const rows = try query.execute(User, "user_all", null, null);
+    const result = try query.execute(User, "user_all", null, null);
     const execute_time = std.time.nanoTimestamp() - start_time;
 
     // Output benchmark results
@@ -51,9 +51,9 @@ test "prepare and execute with benchmarks" {
     std.debug.print("  prepare() = {d} ns\n", .{prepare_time});
     std.debug.print("  execute() = {d} ns\n", .{execute_time});
 
-    if (rows) |result_rows| {
-        defer allocator.free(result_rows);
-        for (result_rows) |user| {
+    if (result) |rows| {
+        defer allocator.free(rows);
+        for (rows) |user| {
             defer user.deinit(allocator);
             std.debug.print("User: id={d}, username={s}\n", .{ user.id, user.username });
         }
