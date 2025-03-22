@@ -13,6 +13,7 @@ const User = struct {
 };
 
 test "simple pool usage" {
+    std.debug.print("\nTEST: simple pool usage\n", .{});
     const allocator = std.testing.allocator;
     // Initialize a connection pool with 10 connections
     const config = zpg.Config{
@@ -34,19 +35,30 @@ test "simple pool usage" {
         var query = pooled_conn.createQuery(allocator);
         defer query.deinit();
 
+        // 1st prepare, will take time
+        std.debug.print("Benchmark result:\n", .{});
+        var start_time = std.time.nanoTimestamp();
         try query.prepare("user_one", "SELECT id, username FROM users WHERE id = $1", User);
+        const prepare_time1 = std.time.nanoTimestamp() - start_time;
+        std.debug.print("  1st prepare() = {d} ns\n", .{prepare_time1});
+
+        // 2nd prepare(), expect it will skip
+        start_time = std.time.nanoTimestamp();
+        try query.prepare("user_one", "SELECT id, username FROM users WHERE id = $1", User);
+        const prepare_time2 = std.time.nanoTimestamp() - start_time;
+        std.debug.print("  2nd prepare() *expect skip = {d} ns\n", .{prepare_time2});
+
         // Create array and pass slice
         var params = [_][]const u8{"1"};
-        const start_time = std.time.nanoTimestamp();
+        start_time = std.time.nanoTimestamp();
         const result = try query.execute(User, "user_one", params[0..], 1);
         const execute_time = std.time.nanoTimestamp() - start_time;
 
-        std.debug.print("Benchmark result:\n", .{});
         std.debug.print("  execute() = {d} ns\n", .{execute_time});
 
         if (result) |rows| {
             defer allocator.free(rows);
-            std.debug.print("\nTEST: simple pool usage, rows.len {}\n", .{rows.len});
+            std.debug.print("\nrows.len {}\n", .{rows.len});
             for (rows) |user| {
                 defer user.deinit(allocator);
                 std.debug.print("User: id={d}, username={s}\n", .{ user.id, user.username });

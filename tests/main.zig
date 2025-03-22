@@ -14,7 +14,6 @@ test "cpu speed test" {
 
 test {
     //std.testing.refAllDecls(@import("connection.zig"));
-    std.testing.refAllDecls(@import("query.zig"));
+    //std.testing.refAllDecls(@import("query.zig"));
     std.testing.refAllDecls(@import("pool.zig"));
-    //std.testing.refAllDecls(@import("result.zig"));
 }

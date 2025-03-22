@@ -214,13 +214,6 @@ pub const Query = struct {
     }
 
     fn cacheStatement(self: *Query, name: []const u8, query: []const u8, comptime T: type) !void {
-        // Check if a statement with this name already exists
-        if (self.conn.statement_cache.get(name) != null) {
-            // Statement already exists, skip preparation
-            return;
-        }
-
-        // Statement doesn't exist, create a new one
         const dupe_name = try self.allocator.dupe(u8, name);
         errdefer self.allocator.free(dupe_name);
         const dupe_query = try self.allocator.dupe(u8, query);
