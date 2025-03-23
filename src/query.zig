@@ -93,7 +93,6 @@ pub const Query = struct {
             const stmt_name = try self.parseExecuteStatementName(sql);
             std.debug.print("Executing {s}\n", .{stmt_name});
             if (self.conn.statement_cache.get(stmt_name)) |action| {
-                std.debug.print("Action for {s}: {any}\n", .{ stmt_name, action });
                 switch (action) {
                     .Select => {
                         const type_info = @typeInfo(T);
