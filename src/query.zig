@@ -28,35 +28,72 @@ pub const Query = struct {
         _ = self;
     }
 
-    pub fn select(self: *Query, comptime T: type, sql: []const u8) ![]const T {
-        const trimmed = std.mem.trim(u8, sql, " \t\n");
-        const upper = trimmed[0..@min(trimmed.len, 10)];
-        if (!std.mem.startsWith(u8, upper, "SELECT") and !std.mem.startsWith(u8, upper, "WITH")) {
-            return error.InvalidSelectQuery;
+    pub fn prepare(self: *Query, sql: []const u8) !bool {
+        var full_sql = sql;
+        defer self.allocator.free(full_sql);
+        if (!std.mem.startsWith(u8, std.mem.trim(u8, sql, " \t\n"), "PREPARE ")) {
+            full_sql = try std.fmt.allocPrint(self.allocator, "PREPARE {s}", .{sql});
         }
+        try self.conn.sendMessage('Q', full_sql, true);
 
-        try self.conn.sendMessage('Q', sql, true);
-        const rows = (try self.processSelectResponses(T)) orelse &[_]T{};
-        return rows;
+        const stmt_name = try self.parsePrepareStatementName(full_sql);
+        const action = try self.parsePrepareStatementAction(full_sql);
+        const owned_name = try self.allocator.dupe(u8, stmt_name);
+        try self.conn.statement_cache.put(owned_name, action);
+
+        return try self.processSimpleCommand();
     }
 
-    pub fn insert(self: *Query, sql: []const u8) !u64 {
-        const result = try self.execute(sql, Empty);
-        switch (result) {
-            .command => |count| return count,
-            else => return error.UnexpectedResult,
+    pub fn execute(self: *Query, name: []const u8, params: ?[]const Param, comptime T: type) !Result(T) {
+        // Fast path: Use simple query protocol with EXECUTE statement
+        if (params) |p| {
+            var buffer = std.ArrayList(u8).init(self.allocator);
+            defer buffer.deinit();
+            try buffer.writer().writeAll("EXECUTE ");
+            try buffer.writer().writeAll(name);
+            if (p.len > 0) {
+                try buffer.writer().writeAll(" (");
+
+                // Format parameters
+                for (p, 0..) |param, i| {
+                    if (i > 0) try buffer.writer().writeAll(", ");
+                    try formatParamAsText(&buffer, param);
+                }
+
+                try buffer.writer().writeAll(")");
+            }
+
+            return try self.run(buffer.items, T);
+        } else {
+            // Slow path: Use extended query protocol for NULL params
+            try self.sendBindMessage(name, params);
+            try self.conn.sendMessage('E', &[_]u8{0}, false); // Execute message (empty portal)
+            try self.conn.sendMessage('S', &[_]u8{}, false); // Sync message
+
+            if (self.conn.statement_cache.get(name)) |action| {
+                switch (action) {
+                    .Select => {
+                        const type_info = @typeInfo(T);
+                        if (type_info != .@"struct") {
+                            @compileError("EXECUTE for SELECT requires T to be a struct");
+                        }
+                        const rows = (try self.processSelectResponses(T)) orelse &[_]T{};
+                        return Result(T){ .select = rows };
+                    },
+                    .Insert, .Update, .Delete => {
+                        return Result(T){ .command = try self.processCommandResponses() };
+                    },
+                    .Other => {
+                        return Result(T){ .success = try self.processSimpleCommand() };
+                    },
+                }
+            } else {
+                return error.UnknownPreparedStatement;
+            }
         }
     }
 
-    pub fn update(self: *Query, sql: []const u8) !u64 {
-        const result = try self.execute(sql, Empty);
-        switch (result) {
-            .command => |count| return count,
-            else => return error.UnexpectedResult,
-        }
-    }
-
-    pub fn execute(self: *Query, sql: []const u8, comptime T: type) !Result(T) {
+    pub fn run(self: *Query, sql: []const u8, comptime T: type) !Result(T) {
         try self.conn.sendMessage('Q', sql, true);
         const trimmed = std.mem.trim(u8, sql, " \t\n");
         const upper = trimmed[0..@min(trimmed.len, 10)];
@@ -76,7 +113,7 @@ pub const Query = struct {
             const action = try self.parsePrepareStatementAction(sql);
             const owned_name = try self.allocator.dupe(u8, stmt_name);
             try self.conn.statement_cache.put(owned_name, action);
-            std.debug.print("Cached {s} as {any}\n", .{ owned_name, action });
+
             return Result(T){ .success = try self.processSimpleCommand() };
         } else if (std.mem.startsWith(u8, upper, "CREATE") or
             std.mem.startsWith(u8, upper, "ALTER") or
@@ -117,10 +154,133 @@ pub const Query = struct {
         }
     }
 
-    pub fn executePrepared(self: *Query, comptime T: type, name: []const u8) !Result(T) {
-        const sql = try std.fmt.allocPrint(self.allocator, "EXECUTE {s}", .{name});
-        defer self.allocator.free(sql);
-        return self.execute(sql, T);
+    fn sendBindMessage(self: *Query, name: []const u8, params: ?[]const Param) !void {
+        var buffer = std.ArrayList(u8).init(self.allocator);
+        defer buffer.deinit();
+        const writer = buffer.writer();
+
+        try writer.writeByte(0); // Empty portal name
+        try writer.writeAll(name);
+        try writer.writeByte(0);
+
+        const param_count = if (params) |p| p.len else 0;
+
+        // Format codes section
+        try writer.writeInt(u16, @intCast(param_count), .big);
+        if (params) |p| {
+            for (p) |param| {
+                try writer.writeInt(u16, param.format, .big); // Use param.format directly
+            }
+        }
+
+        // Parameter values section
+        try writer.writeInt(u16, @intCast(param_count), .big);
+        if (params) |p| {
+            for (p) |param| {
+                try writeParameterValue(writer, param);
+            }
+        }
+
+        // Result format code section (we want text results)
+        try writer.writeInt(u16, 0, .big);
+
+        try self.conn.sendMessage('B', buffer.items, false);
+    }
+
+    fn sendExecuteMessage(self: *Query) !void {
+        var buffer = std.ArrayList(u8).init(self.allocator);
+        defer buffer.deinit();
+        const writer = buffer.writer();
+
+        //try writer.writeAll(self.portal_name);
+        try writer.writeByte(0);
+        try writer.writeInt(i32, 0, .big);
+
+        try self.conn.sendMessage('E', buffer.items, false);
+    }
+
+    fn sendSyncMessage(self: *Query) !void {
+        try self.conn.sendMessage('S', "", false);
+    }
+
+    fn writeParameterValue(writer: anytype, param: Param) !void {
+        if (param.value == .Null) {
+            try writer.writeInt(i32, -1, .big); // NULL
+            return;
+        }
+
+        switch (param.value) {
+            .Null => unreachable, // Handled above
+            .String => |value| {
+                try writer.writeInt(i32, @intCast(value.len), .big);
+                try writer.writeAll(value);
+            },
+            .Int => |data| {
+                try writer.writeInt(i32, @intCast(data.size), .big);
+                try writer.writeAll(data.bytes[0..data.size]);
+            },
+            .Float => |data| {
+                try writer.writeInt(i32, @intCast(data.size), .big);
+                try writer.writeAll(data.bytes[0..data.size]);
+            },
+            .Bool => |value| {
+                try writer.writeInt(i32, 1, .big);
+                try writer.writeByte(if (value) 1 else 0);
+            },
+        }
+    }
+
+    fn formatParamAsText(buffer: *std.ArrayList(u8), param: Param) !void {
+        const writer = buffer.writer();
+        switch (param.value) {
+            .Null => try writer.writeAll("NULL"),
+            .String => |value| {
+                // Escape single quotes for SQL
+                try writer.writeByte('\'');
+                for (value) |c| {
+                    if (c == '\'') try writer.writeByte('\''); // Double single quotes to escape
+                    try writer.writeByte(c);
+                }
+                try writer.writeByte('\'');
+            },
+            .Int => |data| {
+                // Extract the integer based on its size
+                switch (data.size) {
+                    1 => {
+                        const value = std.mem.readInt(i8, data.bytes[0..1], .big);
+                        try std.fmt.format(writer, "{d}", .{value});
+                    },
+                    2 => {
+                        const value = std.mem.readInt(i16, data.bytes[0..2], .big);
+                        try std.fmt.format(writer, "{d}", .{value});
+                    },
+                    4 => {
+                        const value = std.mem.readInt(i32, data.bytes[0..4], .big);
+                        try std.fmt.format(writer, "{d}", .{value});
+                    },
+                    8 => {
+                        const value = std.mem.readInt(i64, data.bytes[0..8], .big);
+                        try std.fmt.format(writer, "{d}", .{value});
+                    },
+                    else => unreachable,
+                }
+            },
+            .Float => |data| {
+                // Extract the float based on its size
+                if (data.size == 4) {
+                    const bits = std.mem.readInt(u32, data.bytes[0..4], .big);
+                    const value: f32 = @bitCast(bits);
+                    try std.fmt.format(writer, "{d}", .{value});
+                } else if (data.size == 8) {
+                    const bits = std.mem.readInt(u64, data.bytes[0..8], .big);
+                    const value: f64 = @bitCast(bits);
+                    try std.fmt.format(writer, "{d}", .{value});
+                } else {
+                    unreachable;
+                }
+            },
+            .Bool => |value| try writer.writeAll(if (value) "TRUE" else "FALSE"),
+        }
     }
 
     // Process INSERT/UPDATE/DELETE responses
@@ -156,9 +316,10 @@ pub const Query = struct {
         }
     }
 
-    fn processSimpleCommand(self: *Query) !void {
+    fn processSimpleCommand(self: *Query) !bool {
         var buffer: [4096]u8 = undefined;
 
+        var success = false;
         while (true) {
             const result = try self.conn.readMessageType(&buffer);
             const msg_type = result.type;
@@ -172,10 +333,11 @@ pub const Query = struct {
                     const command_tag = try reader.readUntilDelimiterAlloc(self.allocator, 0, 1024);
                     defer self.allocator.free(command_tag);
                     // Could optionally check command_tag for specific completion status
+                    success = true;
                 },
                 'Z' => {
                     // Ready for Query - transaction complete
-                    return;
+                    return success;
                 },
                 'E' => {
                     // ErrorResponse - handle database errors
@@ -600,6 +762,9 @@ pub const Query = struct {
             const reader = fbs.reader().any();
 
             switch (msg_type) {
+                '2' => {
+                    // ignnore BindComplete
+                },
                 'T' => {
                     // Row Description - verify column count
                     const column_count = try reader.readInt(u16, .big);
@@ -616,6 +781,7 @@ pub const Query = struct {
                     try rows.append(instance);
                 },
                 'C' => {
+                    // CommandComplete
                     const command_tag = try reader.readUntilDelimiterAlloc(self.allocator, 0, 1024);
                     defer self.allocator.free(command_tag);
                     if (!std.mem.startsWith(u8, command_tag, "SELECT")) {
@@ -629,7 +795,10 @@ pub const Query = struct {
                     }
                     return owned_slice;
                 },
-                else => return error.ProtocolError,
+                else => {
+                    std.debug.print("Bad thing happen, msg_type: {c}", .{msg_type});
+                    return error.ProtocolError;
+                },
             }
         }
     }

@@ -174,7 +174,7 @@ pub fn Result(comptime T: type) type {
     return union(enum) {
         select: []const T,
         command: u64,
-        success: void,
+        success: bool,
         explain: []ExplainRow,
     };
 }

@@ -23,6 +23,10 @@ const User = struct {
     }
 };
 
+const params = &[_]Param{
+    Param.int(@as(i64, 1)),
+};
+
 // Define a UserWithFirstName struct to represent a user with their first name
 const UserWithFirstName = struct {
     id: i64, // User ID
@@ -51,21 +55,18 @@ test "simple pool test" {
     var query = pooled_conn.createQuery(allocator);
     defer query.deinit(); // Ensure the query object is deinitialized
 
-    // Benchmark and prepare a SELECT statement
+    // Step 1. Benchmark and prepare a SELECT statement
     std.debug.print("\nPreparing SELECT statement 'user_one'...\n", .{});
     var start_time = std.time.nanoTimestamp();
-    const prepare_result = try query.execute("PREPARE user_one (int8) AS SELECT id, username FROM users WHERE id = $1", zpg.types.Empty);
+    const prepared_user_one = try query.prepare("user_one (int8) AS SELECT id, username FROM users WHERE id = $1");
     const prepare_select_time = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time)) / 1000.0;
     std.debug.print("  Time taken to prepare SELECT statement: {d:.3} µs\n", .{prepare_select_time});
-    switch (prepare_result) {
-        .success => std.debug.print("  SELECT statement prepared successfully.\n", .{}),
-        else => unreachable,
-    }
+    std.debug.print("  SELECT statement prepared successfully. {}\n", .{prepared_user_one});
 
-    // Execute the prepared SELECT statement
+    // Step 2. Execute the prepared SELECT statement
     std.debug.print("\nExecuting SELECT statement 'user_one' with id = 1...\n", .{});
     start_time = std.time.nanoTimestamp();
-    const select_result = try query.execute("EXECUTE user_one (1)", User);
+    const select_result = try query.execute("user_one", params, User);
     const execute_select_time = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time)) / 1000.0;
     std.debug.print("  Time taken to execute SELECT statement: {d:.3} µs\n", .{execute_select_time});
     switch (select_result) {
@@ -80,10 +81,10 @@ test "simple pool test" {
         else => unreachable,
     }
 
-    // Execute the prepared SELECT statement again to demonstrate reusability
+    // Step 3. Execute the prepared SELECT statement again to demonstrate reusability
     std.debug.print("\nRe-executing SELECT statement 'user_one' with id = 1...\n", .{});
     start_time = std.time.nanoTimestamp();
-    const select_result2 = try query.execute("EXECUTE user_one (1)", User);
+    const select_result2 = try query.run("EXECUTE user_one (1)", User);
     const re_execute_select_time = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time)) / 1000.0;
     std.debug.print("  Time taken to re-execute SELECT statement: {d:.3} µs\n", .{re_execute_select_time});
     switch (select_result2) {
@@ -98,21 +99,19 @@ test "simple pool test" {
         else => unreachable,
     }
 
-    // Benchmark and prepare an UPDATE statement
+    // Step 4. Benchmark and prepare an UPDATE statement
     std.debug.print("\nPreparing UPDATE statement 'user_update'...\n", .{});
     start_time = std.time.nanoTimestamp();
-    const prepare_result2 = try query.execute("PREPARE user_update (text, int8) AS UPDATE users SET first_name = $1 WHERE id = $2", zpg.types.Empty);
+    const prepared_user_update = try query.prepare("user_update (text, int8) AS UPDATE users SET first_name = $1 WHERE id = $2");
+
     const prepare_update_time = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time)) / 1000.0;
     std.debug.print("  Time taken to prepare UPDATE statement: {d:.3} µs\n", .{prepare_update_time});
-    switch (prepare_result2) {
-        .success => std.debug.print("  UPDATE statement prepared successfully.\n", .{}),
-        else => unreachable,
-    }
+    std.debug.print("  UPDATE statement prepared successfully. {}\n", .{prepared_user_update});
 
-    // Reset the first_name field using a raw UPDATE statement
+    // Step 5. Reset the first_name field using a raw UPDATE statement
     std.debug.print("\nResetting first_name to 'Alice' for user with id = 1...\n", .{});
     start_time = std.time.nanoTimestamp();
-    const reset_result = try query.execute("UPDATE users SET first_name = 'Alice' WHERE id = 1", zpg.types.Empty);
+    const reset_result = try query.run("UPDATE users SET first_name = 'Alice' WHERE id = 1", zpg.types.Empty);
     const reset_update_time = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time)) / 1000.0;
     std.debug.print("  Time taken to reset first_name: {d:.3} µs\n", .{reset_update_time});
     switch (reset_result) {
@@ -122,7 +121,7 @@ test "simple pool test" {
 
     // Verify the state before the update
     std.debug.print("\nChecking user data before UPDATE...\n", .{});
-    const before_rows = try query.execute("SELECT id, first_name FROM users WHERE id = 1", UserWithFirstName);
+    const before_rows = try query.run("SELECT id, first_name FROM users WHERE id = 1", UserWithFirstName);
     switch (before_rows) {
         .select => |rows| {
             defer allocator.free(rows);
@@ -135,10 +134,10 @@ test "simple pool test" {
         else => unreachable,
     }
 
-    // Execute the prepared UPDATE statement
+    // Step 6. Execute the prepared UPDATE statement
     std.debug.print("\nExecuting UPDATE statement 'user_update' to set first_name to 'Carol' for user with id = 1...\n", .{});
     start_time = std.time.nanoTimestamp();
-    const update_result = try query.execute("EXECUTE user_update ('Carol', 1)", zpg.types.Empty);
+    const update_result = try query.run("EXECUTE user_update ('Carol', 1)", zpg.types.Empty);
     const execute_update_time = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time)) / 1000.0;
     std.debug.print("  Time taken to execute UPDATE statement: {d:.3} µs\n", .{execute_update_time});
     switch (update_result) {
@@ -149,10 +148,10 @@ test "simple pool test" {
         },
     }
 
-    // Re-execute the prepared UPDATE statement
+    // Step 7. Re-execute the prepared UPDATE statement
     std.debug.print("\nRe-executing UPDATE statement 'user_update' to set first_name to 'Dave' for user with id = 1...\n", .{});
     start_time = std.time.nanoTimestamp();
-    const update_result2 = try query.execute("EXECUTE user_update ('Dave', 1)", zpg.types.Empty);
+    const update_result2 = try query.run("EXECUTE user_update ('Dave', 1)", zpg.types.Empty);
     const re_execute_update_time = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time)) / 1000.0;
     std.debug.print("  Time taken to re-execute UPDATE statement: {d:.3} µs\n", .{re_execute_update_time});
     switch (update_result2) {
@@ -165,7 +164,7 @@ test "simple pool test" {
 
     // Verify the state after the re-executed UPDATE
     std.debug.print("\nChecking user data after re-executed UPDATE...\n", .{});
-    const after_rows = try query.execute("SELECT id, first_name FROM users WHERE id = 1", UserWithFirstName);
+    const after_rows = try query.run("SELECT id, first_name FROM users WHERE id = 1", UserWithFirstName);
     switch (after_rows) {
         .select => |rows| {
             defer allocator.free(rows);
