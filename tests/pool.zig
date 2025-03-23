@@ -43,7 +43,7 @@ test "simple pool test" {
     // Pool execute select
 
     // PREPARE SELECT
-    std.debug.print("Benchmark PREPARE user_one:\n", .{});
+    std.debug.print("\n\nBenchmark PREPARE user_one:\n", .{});
     var start_time = std.time.nanoTimestamp();
     const prepare_result = try query.execute("PREPARE user_one (int8) AS SELECT id, username FROM users WHERE id = $1", zpg.types.Empty);
     std.debug.print("  query.execute = {d:.3} µs\n", .{@as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time)) / 1000.0});
@@ -53,7 +53,7 @@ test "simple pool test" {
     }
 
     // EXECUTE SELECT
-    std.debug.print("Benchmark SELECT via EXECUTE user_one:\n", .{});
+    // std.debug.print("\nBenchmark SELECT via EXECUTE user_one:\n", .{});
     start_time = std.time.nanoTimestamp();
     const select_result = try query.execute("EXECUTE user_one (1)", User);
     std.debug.print("  query.execute = {d:.3} µs\n", .{@as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time)) / 1000.0});
@@ -68,8 +68,23 @@ test "simple pool test" {
         else => unreachable,
     }
 
+    std.debug.print("\nAgain, SELECT via EXECUTE user_one:\n", .{});
+    start_time = std.time.nanoTimestamp();
+    const select_result2 = try query.execute("EXECUTE user_one (1)", User);
+    std.debug.print("  query.execute = {d:.3} µs\n", .{@as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time)) / 1000.0});
+    switch (select_result2) {
+        .select => |rows| {
+            defer allocator.free(rows);
+            for (rows) |user| {
+                defer user.deinit(allocator);
+                std.debug.print("id: {d}, username: {s}\n", .{ user.id, user.username });
+            }
+        },
+        else => unreachable,
+    }
+
     // PREPARE UPDATE
-    std.debug.print("Benchmark PREPARE user_update:\n", .{});
+    std.debug.print("\n\nBenchmark PREPARE user_update:\n", .{});
     start_time = std.time.nanoTimestamp();
     const prepare_result2 = try query.execute("PREPARE user_update (text, int8) AS UPDATE users SET first_name = $1 WHERE id = $2", zpg.types.Empty);
     std.debug.print("  query.execute = {d:.3} µs\n", .{@as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time)) / 1000.0});
@@ -79,7 +94,7 @@ test "simple pool test" {
     }
 
     // Reset first_name
-    std.debug.print("Resetting first_name:\n", .{});
+    std.debug.print("\n\nResetting first_name with Raw UPDATE:\n", .{});
     start_time = std.time.nanoTimestamp();
     const reset_result = try query.execute("UPDATE users SET first_name = 'Alice' WHERE id = 1", zpg.types.Empty);
     std.debug.print("  reset = {d:.3} µs\n", .{@as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time)) / 1000.0});
@@ -89,7 +104,7 @@ test "simple pool test" {
     }
 
     // Verify state before
-    std.debug.print("Checking state before update:\n", .{});
+    std.debug.print("\nChecking state before update:\n", .{});
     const before_rows = try query.execute("SELECT id, first_name FROM users WHERE id = 1", UserWithFirstName);
     switch (before_rows) {
         .select => |rows| {
@@ -103,7 +118,7 @@ test "simple pool test" {
     }
 
     // EXECUTE UPDATE
-    std.debug.print("Benchmark UPDATE via EXECUTE user_update:\n", .{});
+    std.debug.print("\n\nBenchmark UPDATE via EXECUTE user_update:\n", .{});
     start_time = std.time.nanoTimestamp();
     const update_result = try query.execute("EXECUTE user_update ('Carol', 1)", zpg.types.Empty);
     std.debug.print("  query.execute = {d:.3} µs\n", .{@as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time)) / 1000.0});
@@ -116,7 +131,7 @@ test "simple pool test" {
     }
 
     // Verify state after
-    std.debug.print("Checking state after update:\n", .{});
+    std.debug.print("\nChecking state after update:\n", .{});
     const after_rows = try query.execute("SELECT id, first_name FROM users WHERE id = 1", UserWithFirstName);
     switch (after_rows) {
         .select => |rows| {
