@@ -27,6 +27,11 @@ const params = &[_]Param{
     Param.int(@as(i64, 1)),
 };
 
+const params_for_user_update = &[_]Param{
+    Param.string("Joe"),
+    Param.int(@as(i64, 1)),
+};
+
 // Define a UserWithFirstName struct to represent a user with their first name
 const UserWithFirstName = struct {
     id: i64, // User ID
@@ -135,9 +140,9 @@ test "simple pool test" {
     }
 
     // Step 6. Execute the prepared UPDATE statement
-    std.debug.print("\nExecuting UPDATE statement 'user_update' to set first_name to 'Carol' for user with id = 1...\n", .{});
+    std.debug.print("\nExecuting UPDATE statement 'user_update' using query.execute and params_for_user_update...\n", .{});
     start_time = std.time.nanoTimestamp();
-    const update_result = try query.run("EXECUTE user_update ('Carol', 1)", zpg.types.Empty);
+    const update_result = try query.execute("user_update", params_for_user_update, zpg.types.Empty);
     const execute_update_time = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time)) / 1000.0;
     std.debug.print("  Time taken to execute UPDATE statement: {d:.3} µs\n", .{execute_update_time});
     switch (update_result) {
