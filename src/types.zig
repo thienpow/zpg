@@ -1,3 +1,5 @@
+const std = @import("std");
+
 pub const Error = error{
     ConnectionFailed,
     AuthenticationFailed,
@@ -137,8 +139,46 @@ pub const ConnectionState = enum {
     Error,
 };
 
+pub const Action = enum {
+    Select,
+    Insert,
+    Update,
+    Delete,
+    Other,
+};
+
 // Metadata to associate a statement with a struct type
 pub const StatementInfo = struct {
     query: []const u8, // The prepared statement query
     type_id: usize, // A unique identifier for the struct type
+};
+
+// Generic struct to represent a row in an EXPLAIN plan
+pub const ExplainRow = struct {
+    operation: []const u8, // e.g., "Seq Scan", "Index Scan"
+    target: []const u8, // Table or index name
+    cost: f64, // Estimated cost (could be startup + total in some systems)
+    rows: u64, // Estimated number of rows
+    details: ?[]const u8, // Additional info (e.g., filter conditions)
+
+    // Cleanup function for allocated strings
+    pub fn deinit(self: ExplainRow, allocator: std.mem.Allocator) void {
+        allocator.free(self.operation);
+        allocator.free(self.target);
+        if (self.details) |d| allocator.free(d);
+    }
+};
+
+// Define Result without T dependency for non-SELECT cases
+pub fn Result(comptime T: type) type {
+    return union(enum) {
+        select: []const T,
+        command: u64,
+        success: void,
+        explain: []ExplainRow,
+    };
+}
+
+pub const Empty = struct {
+    placeholder: usize,
 };

@@ -1,13 +1,17 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
+
 const Connection = @import("connection.zig").Connection;
 
 const types = @import("types.zig");
 const StatementInfo = types.StatementInfo;
 const Error = types.Error;
+const ExplainRow = types.ExplainRow;
+const Result = types.Result;
+const Empty = types.Empty;
+const Action = types.Action;
 
 const Param = @import("param.zig").Param;
-
-const Allocator = std.mem.Allocator;
 
 pub const Query = struct {
     conn: *Connection,
@@ -24,56 +28,232 @@ pub const Query = struct {
         _ = self;
     }
 
-    pub fn execute(self: *Query, comptime T: type, sql: []const u8) !?[]T {
+    pub fn select(self: *Query, comptime T: type, sql: []const u8) ![]const T {
+        const trimmed = std.mem.trim(u8, sql, " \t\n");
+        const upper = trimmed[0..@min(trimmed.len, 10)];
+        if (!std.mem.startsWith(u8, upper, "SELECT") and !std.mem.startsWith(u8, upper, "WITH")) {
+            return error.InvalidSelectQuery;
+        }
+
         try self.conn.sendMessage('Q', sql, true);
-        return try self.processExecuteResponses(T);
+        const rows = (try self.processSelectResponses(T)) orelse &[_]T{};
+        return rows;
     }
 
-    fn processExecuteResponses(self: *Query, comptime T: type) !?[]T {
-        var buffer: [4096]u8 = undefined;
-        var rows = std.ArrayList(T).init(self.allocator);
-        defer rows.deinit();
-
-        const type_info = @typeInfo(T);
-        if (type_info != .@"struct") {
-            @compileError("processExecuteResponses requires T to be a struct");
+    pub fn insert(self: *Query, sql: []const u8) !u64 {
+        const result = try self.execute(sql, Empty);
+        switch (result) {
+            .command => |count| return count,
+            else => return error.UnexpectedResult,
         }
-        const struct_info = type_info.@"struct";
+    }
 
-        const expected_columns: u16 = @intCast(struct_info.fields.len);
+    pub fn update(self: *Query, sql: []const u8) !u64 {
+        const result = try self.execute(sql, Empty);
+        switch (result) {
+            .command => |count| return count,
+            else => return error.UnexpectedResult,
+        }
+    }
 
+    pub fn execute(self: *Query, sql: []const u8, comptime T: type) !Result(T) {
+        try self.conn.sendMessage('Q', sql, true);
+        const trimmed = std.mem.trim(u8, sql, " \t\n");
+        const upper = trimmed[0..@min(trimmed.len, 10)];
+
+        if (std.mem.startsWith(u8, upper, "SELECT") or
+            std.mem.startsWith(u8, upper, "WITH"))
+        {
+            return Result(T){ .select = (try self.processSelectResponses(T)) orelse &[_]T{} };
+        } else if (std.mem.startsWith(u8, upper, "INSERT") or
+            std.mem.startsWith(u8, upper, "UPDATE") or
+            std.mem.startsWith(u8, upper, "DELETE") or
+            std.mem.startsWith(u8, upper, "MERGE"))
+        {
+            return Result(T){ .command = try self.processCommandResponses() };
+        } else if (std.mem.startsWith(u8, upper, "PREPARE")) {
+            const stmt_name = try self.parsePrepareStatementName(sql);
+            const action = try self.parsePrepareStatementAction(sql);
+            const owned_name = try self.allocator.dupe(u8, stmt_name);
+            try self.conn.statement_cache.put(owned_name, action);
+            std.debug.print("Cached {s} as {any}\n", .{ owned_name, action });
+            return Result(T){ .success = try self.processSimpleCommand() };
+        } else if (std.mem.startsWith(u8, upper, "CREATE") or
+            std.mem.startsWith(u8, upper, "ALTER") or
+            std.mem.startsWith(u8, upper, "DROP") or
+            std.mem.startsWith(u8, upper, "GRANT") or
+            std.mem.startsWith(u8, upper, "REVOKE") or
+            std.mem.startsWith(u8, upper, "COMMIT") or
+            std.mem.startsWith(u8, upper, "ROLLBACK"))
+        {
+            return Result(T){ .success = try self.processSimpleCommand() };
+        } else if (std.mem.startsWith(u8, upper, "EXPLAIN")) {
+            return Result(T){ .explain = try self.processExplainResponses() };
+        } else if (std.mem.startsWith(u8, upper, "EXECUTE")) {
+            const stmt_name = try self.parseExecuteStatementName(sql);
+            std.debug.print("Executing {s}\n", .{stmt_name});
+            if (self.conn.statement_cache.get(stmt_name)) |action| {
+                std.debug.print("Action for {s}: {any}\n", .{ stmt_name, action });
+                switch (action) {
+                    .Select => {
+                        const type_info = @typeInfo(T);
+                        if (type_info != .@"struct") {
+                            @compileError("EXECUTE for SELECT requires T to be a struct");
+                        }
+                        const rows = (try self.processSelectResponses(T)) orelse &[_]T{};
+                        return Result(T){ .select = rows };
+                    },
+                    .Insert, .Update, .Delete => {
+                        return Result(T){ .command = try self.processCommandResponses() };
+                    },
+                    .Other => {
+                        return Result(T){ .success = try self.processSimpleCommand() };
+                    },
+                }
+            } else {
+                return error.UnknownPreparedStatement;
+            }
+        } else {
+            return error.UnsupportedOperation;
+        }
+    }
+
+    pub fn executePrepared(self: *Query, comptime T: type, name: []const u8) !Result(T) {
+        const sql = try std.fmt.allocPrint(self.allocator, "EXECUTE {s}", .{name});
+        defer self.allocator.free(sql);
+        return self.execute(sql, T);
+    }
+
+    // Process INSERT/UPDATE/DELETE responses
+    fn processCommandResponses(self: *Query) !u64 {
+        var buffer: [4096]u8 = undefined;
+        var return_value: u64 = 0;
         while (true) {
             const result = try self.conn.readMessageType(&buffer);
-
             const msg_type = result.type;
             const msg_len = result.len;
             var fbs = std.io.fixedBufferStream(buffer[5..msg_len]);
             const reader = fbs.reader().any();
 
             switch (msg_type) {
-                'T', 'C' => {
-                    // ignore (Row Description)
+                'T', 'D' => {
+                    // ignore
                 },
-                'D' => {
-                    const column_count = try reader.readInt(u16, .big);
-                    if (column_count != expected_columns) return error.ColumnCountMismatch;
+                'C' => {
+                    const command_tag = try reader.readUntilDelimiterAlloc(self.allocator, 0, 1024);
+                    defer self.allocator.free(command_tag);
+                    std.debug.print("Command tag: {s}\n", .{command_tag});
+                    const space_idx = std.mem.indexOfScalar(u8, command_tag, ' ') orelse return error.InvalidCommandTag;
+                    const count_str = command_tag[space_idx + 1 ..];
+                    return_value = try std.fmt.parseInt(u64, count_str, 10);
+                },
+                'Z' => return return_value, // Shouldn't reach here without 'C'
+                'E' => return error.DatabaseError,
+                else => {
+                    std.debug.print("Bad thing happen, {c}", .{msg_type});
+                    return error.ProtocolError;
+                },
+            }
+        }
+    }
 
-                    var instance: T = undefined;
-                    inline for (struct_info.fields) |field| {
-                        @field(instance, field.name) = try readValueForType(reader, field.type, self.allocator);
-                    }
-                    try rows.append(instance);
+    fn processSimpleCommand(self: *Query) !void {
+        var buffer: [4096]u8 = undefined;
+
+        while (true) {
+            const result = try self.conn.readMessageType(&buffer);
+            const msg_type = result.type;
+            const msg_len = result.len;
+            var fbs = std.io.fixedBufferStream(buffer[5..msg_len]);
+            const reader = fbs.reader().any();
+
+            switch (msg_type) {
+                'C' => {
+                    // Command Complete - just verify it’s there
+                    const command_tag = try reader.readUntilDelimiterAlloc(self.allocator, 0, 1024);
+                    defer self.allocator.free(command_tag);
+                    // Could optionally check command_tag for specific completion status
                 },
                 'Z' => {
-                    const owned_slice = try rows.toOwnedSlice();
-                    if (owned_slice.len == 0) {
-                        return null;
-                    }
-                    return owned_slice;
+                    // Ready for Query - transaction complete
+                    return;
+                },
+                'E' => {
+                    // ErrorResponse - handle database errors
+                    return error.DatabaseError;
                 },
                 else => return error.ProtocolError,
             }
         }
+    }
+
+    fn processExplainResponses(self: *Query) ![]ExplainRow {
+        var buffer: [4096]u8 = undefined;
+        var rows = std.ArrayList(ExplainRow).init(self.allocator);
+        defer rows.deinit();
+
+        while (true) {
+            const result = try self.conn.readMessageType(&buffer);
+            const msg_type = result.type;
+            const msg_len = result.len;
+            var fbs = std.io.fixedBufferStream(buffer[5..msg_len]);
+            const reader = fbs.reader().any();
+
+            switch (msg_type) {
+                'T' => {
+                    // Row Description - verify we have expected columns
+                    const column_count = try reader.readInt(u16, .big);
+                    if (column_count < 4) return error.InvalidExplainFormat; // Minimum expected columns
+                },
+                'D' => {
+                    // Data Row
+                    const column_count = try reader.readInt(u16, .big);
+                    if (column_count < 4) return error.InvalidExplainFormat;
+
+                    var row: ExplainRow = undefined;
+
+                    // Operation (column 1)
+                    row.operation = try readString(reader, self.allocator);
+
+                    // Target (column 2)
+                    row.target = try readString(reader, self.allocator);
+
+                    // Cost (column 3) - assuming a string like "12.34"
+                    const cost_str = try readString(reader, self.allocator);
+                    defer self.allocator.free(cost_str);
+                    row.cost = try std.fmt.parseFloat(f64, cost_str);
+
+                    // Rows (column 4)
+                    const rows_str = try readString(reader, self.allocator);
+                    defer self.allocator.free(rows_str);
+                    row.rows = try std.fmt.parseInt(u64, rows_str, 10);
+
+                    // Details (optional column 5)
+                    row.details = if (column_count > 4)
+                        try readString(reader, self.allocator)
+                    else
+                        null;
+
+                    try rows.append(row);
+                },
+                'C' => {
+                    // Command Complete - ignore for EXPLAIN
+                },
+                'Z' => {
+                    return try rows.toOwnedSlice();
+                },
+                else => return error.ProtocolError,
+            }
+        }
+    }
+
+    // Helper function to read null-terminated strings
+    fn readString(reader: anytype, allocator: std.mem.Allocator) ![]const u8 {
+        const len = try reader.readInt(u16, .big);
+        if (len == 0xffff) return ""; // NULL value
+        const str = try allocator.alloc(u8, len);
+        try reader.readNoEof(str);
+        return str;
     }
 
     fn readValueForType(reader: std.io.AnyReader, comptime FieldType: type, allocator: std.mem.Allocator) !FieldType {
@@ -361,5 +541,97 @@ pub const Query = struct {
             .optional => null,
             else => @compileError("Unsupported type for default value: " ++ @typeName(T)),
         };
+    }
+
+    // Parse the statement name from PREPARE
+    fn parsePrepareStatementName(_: *Query, sql: []const u8) ![]const u8 {
+        const trimmed = std.mem.trim(u8, sql, " \t\n");
+        const prepare_end = std.mem.indexOf(u8, trimmed, " ") orelse return error.InvalidPrepareSyntax;
+        const after_prepare = std.mem.trimLeft(u8, trimmed[prepare_end..], " ");
+        const name_end = std.mem.indexOfAny(u8, after_prepare, " (") orelse return error.InvalidPrepareSyntax;
+        return after_prepare[0..name_end];
+    }
+
+    // Parse the action type from PREPARE
+    fn parsePrepareStatementAction(_: *Query, sql: []const u8) !Action {
+        const trimmed = std.mem.trim(u8, sql, " \t\n");
+        const as_idx = std.mem.indexOf(u8, trimmed, " AS ") orelse return error.InvalidPrepareSyntax;
+        const stmt_sql = std.mem.trimLeft(u8, trimmed[as_idx + 4 ..], " ");
+        const upper = stmt_sql[0..@min(stmt_sql.len, 10)];
+        if (std.mem.startsWith(u8, upper, "SELECT") or std.mem.startsWith(u8, upper, "WITH")) {
+            return .Select;
+        } else if (std.mem.startsWith(u8, upper, "INSERT")) {
+            return .Insert;
+        } else if (std.mem.startsWith(u8, upper, "UPDATE")) {
+            return .Update;
+        } else if (std.mem.startsWith(u8, upper, "DELETE")) {
+            return .Delete;
+        } else {
+            return .Other;
+        }
+    }
+
+    // Parse the statement name from EXECUTE
+    fn parseExecuteStatementName(_: *Query, sql: []const u8) ![]const u8 {
+        const trimmed = std.mem.trim(u8, sql, " \t\n");
+        const execute_end = std.mem.indexOf(u8, trimmed, " ") orelse return error.InvalidExecuteSyntax;
+        const after_execute = std.mem.trimLeft(u8, trimmed[execute_end..], " ");
+        const name_end = std.mem.indexOfAny(u8, after_execute, " (") orelse after_execute.len;
+        return after_execute[0..name_end];
+    }
+
+    fn processSelectResponses(self: *Query, comptime T: type) !?[]T {
+        var buffer: [4096]u8 = undefined;
+        var rows = std.ArrayList(T).init(self.allocator);
+        defer rows.deinit();
+
+        const type_info = @typeInfo(T);
+        if (type_info != .@"struct") {
+            @compileError("processSelectResponses requires T to be a struct");
+        }
+        const struct_info = type_info.@"struct";
+
+        const expected_columns: u16 = @intCast(struct_info.fields.len);
+
+        while (true) {
+            const result = try self.conn.readMessageType(&buffer);
+            const msg_type = result.type;
+            const msg_len = result.len;
+            var fbs = std.io.fixedBufferStream(buffer[5..msg_len]);
+            const reader = fbs.reader().any();
+
+            switch (msg_type) {
+                'T' => {
+                    // Row Description - verify column count
+                    const column_count = try reader.readInt(u16, .big);
+                    if (column_count != expected_columns) return error.ColumnCountMismatch;
+                },
+                'D' => {
+                    const column_count = try reader.readInt(u16, .big);
+                    if (column_count != expected_columns) return error.ColumnCountMismatch;
+
+                    var instance: T = undefined;
+                    inline for (struct_info.fields) |field| {
+                        @field(instance, field.name) = try readValueForType(reader, field.type, self.allocator);
+                    }
+                    try rows.append(instance);
+                },
+                'C' => {
+                    const command_tag = try reader.readUntilDelimiterAlloc(self.allocator, 0, 1024);
+                    defer self.allocator.free(command_tag);
+                    if (!std.mem.startsWith(u8, command_tag, "SELECT")) {
+                        return error.NotASelectQuery; // Fail if not a SELECT response
+                    }
+                },
+                'Z' => {
+                    const owned_slice = try rows.toOwnedSlice();
+                    if (owned_slice.len == 0) {
+                        return null;
+                    }
+                    return owned_slice;
+                },
+                else => return error.ProtocolError,
+            }
+        }
     }
 };
