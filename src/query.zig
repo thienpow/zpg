@@ -30,15 +30,54 @@ pub const Query = struct {
 
     pub fn prepare(self: *Query, sql: []const u8) !bool {
         var full_sql = sql;
-        defer self.allocator.free(full_sql);
-        if (!std.mem.startsWith(u8, std.mem.trim(u8, sql, " \t\n"), "PREPARE ")) {
+        defer {
+            if (!std.mem.startsWith(u8, std.mem.trim(u8, sql, " \t\n"), "PREPARE ")) {
+                self.allocator.free(full_sql);
+            }
+        }
+
+        // Check if statement is already cached
+        const trimmed_sql = std.mem.trim(u8, sql, " \t\n");
+        var temp_sql: ?[]const u8 = null;
+        defer if (temp_sql) |ts| self.allocator.free(ts);
+
+        const stmt_name = owned: {
+            if (std.mem.startsWith(u8, trimmed_sql, "PREPARE ")) {
+                break :owned try self.parsePrepareStatementName(sql);
+            } else {
+                temp_sql = try std.fmt.allocPrint(self.allocator, "PREPARE {s}", .{sql});
+                break :owned try self.allocator.dupe(u8, try self.parsePrepareStatementName(temp_sql.?));
+            }
+        };
+        defer self.allocator.free(stmt_name);
+
+        // If statement is already in cache, skip preparation if action matches
+        if (self.conn.statement_cache.get(stmt_name)) |cached_action| {
+            const current_action = blk: {
+                if (std.mem.startsWith(u8, trimmed_sql, "PREPARE ")) {
+                    break :blk try self.parsePrepareStatementAction(sql);
+                } else {
+                    if (temp_sql == null) {
+                        temp_sql = try std.fmt.allocPrint(self.allocator, "PREPARE {s}", .{sql});
+                    }
+                    break :blk try self.parsePrepareStatementAction(temp_sql.?);
+                }
+            };
+
+            if (cached_action == current_action) {
+                return true; // Statement already prepared with same action
+            }
+        }
+
+        // Prepare the statement if not cached or if action differs
+        if (!std.mem.startsWith(u8, trimmed_sql, "PREPARE ")) {
             full_sql = try std.fmt.allocPrint(self.allocator, "PREPARE {s}", .{sql});
         }
+
         try self.conn.sendMessage('Q', full_sql, true);
 
-        const stmt_name = try self.parsePrepareStatementName(full_sql);
-        const action = try self.parsePrepareStatementAction(full_sql);
         const owned_name = try self.allocator.dupe(u8, stmt_name);
+        const action = try self.parsePrepareStatementAction(full_sql);
         try self.conn.statement_cache.put(owned_name, action);
 
         return try self.processSimpleCommand();
