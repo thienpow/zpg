@@ -30,11 +30,8 @@ pub const Query = struct {
 
     pub fn prepare(self: *Query, sql: []const u8) !bool {
         var full_sql = sql;
-        defer {
-            if (!std.mem.startsWith(u8, std.mem.trim(u8, sql, " \t\n"), "PREPARE ")) {
-                self.allocator.free(full_sql);
-            }
-        }
+        var allocated_full_sql = false;
+        defer if (allocated_full_sql) self.allocator.free(full_sql);
 
         // Check if statement is already cached
         const trimmed_sql = std.mem.trim(u8, sql, " \t\n");
@@ -72,6 +69,7 @@ pub const Query = struct {
         // Prepare the statement if not cached or if action differs
         if (!std.mem.startsWith(u8, trimmed_sql, "PREPARE ")) {
             full_sql = try std.fmt.allocPrint(self.allocator, "PREPARE {s}", .{sql});
+            allocated_full_sql = true;
         }
 
         try self.conn.sendMessage('Q', full_sql, true);

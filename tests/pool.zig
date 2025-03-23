@@ -66,6 +66,11 @@ test "simple pool test" {
     const prepared_user_one = try query.prepare("user_one (int8) AS SELECT id, username FROM users WHERE id = $1");
     const prepare_select_time = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time)) / 1000.0;
     std.debug.print("  Time taken to prepare SELECT statement: {d:.3} µs\n", .{prepare_select_time});
+    start_time = std.time.nanoTimestamp();
+    const repeat_ok = try query.prepare("user_one (int8) AS SELECT id, username FROM users WHERE id = $1");
+    const prepare_select_time2 = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time)) / 1000.0;
+    std.debug.print("  Repeat, expect skip happen because of cached: {d:.3} {any} µs\n", .{ prepare_select_time2, repeat_ok });
+
     std.debug.print("  SELECT statement prepared successfully. {}\n", .{prepared_user_one});
 
     // Step 2. Execute the prepared SELECT statement
