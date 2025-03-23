@@ -98,6 +98,13 @@ pub const Error = error{
     NotConnected,
     StatementNotPrepared,
     UnexpectedEOF,
+    KerberosNotSupported,
+    CleartextPasswordNotSupported,
+    Md5PasswordNotSupported,
+    ScmCredentialsNotSupported,
+    GssapiNotSupported,
+    SspiNotSupported,
+    UnknownAuthMethod,
 };
 
 pub const AuthType = enum(u32) {

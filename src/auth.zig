@@ -37,10 +37,10 @@ pub const Auth = struct {
 
         const auth_type = try reader.readInt(i32, .big);
         switch (auth_type) {
-            0 => {
+            0 => { // AuthenticationOk
                 return;
             },
-            10 => {
+            10 => { // SASL (SCRAM-SHA-256)
                 var mechanisms = std.ArrayList([]const u8).init(self.allocator);
                 defer {
                     for (mechanisms.items) |mech| self.allocator.free(mech);
@@ -80,8 +80,26 @@ pub const Auth = struct {
                     return error.AuthenticationFailed;
                 }
             },
+            2 => { // KerberosV5
+                return error.KerberosNotSupported;
+            },
+            3 => { // Cleartext password
+                return error.CleartextPasswordNotSupported;
+            },
+            5 => { // MD5 password
+                return error.Md5PasswordNotSupported;
+            },
+            6 => { // SCM credentials
+                return error.ScmCredentialsNotSupported;
+            },
+            7 => { // GSSAPI
+                return error.GssapiNotSupported;
+            },
+            9 => { // SSPI
+                return error.SspiNotSupported;
+            },
             else => {
-                return error.AuthenticationFailed;
+                return error.UnknownAuthMethod;
             },
         }
     }
