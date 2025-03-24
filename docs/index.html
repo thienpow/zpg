@@ -124,12 +124,12 @@ defer pooled_conn.deinit();</code></pre>
                     reliability.
                 </p>
                 <pre><code>const select_result = try query.execute("user_one", params, User);
-// Time taken: ~12 µs
+// Time taken: ~220 µs
 const update_result = try query.execute("user_update", params_for_user_update, zpg.types.Empty);
-// Time taken: ~15 µs</code></pre>
+// Time taken: ~1002 µs</code></pre>
                 <p>
                     Benchmarked results show SELECTs and UPDATEs executing in as
-                    little as 12-15 µs—performance you can count on.
+                    little as 200-1500 µs—performance you can count on.
                 </p>
             </div>
 
@@ -174,7 +174,7 @@ const rows = try query.execute("user_one", params, User);</code></pre>
         </div>
 
         <div class="cta">
-            <a href="https://github.com/ziglibs/zpg"
+            <a href="https://github.com/thienpow/zpg"
                 >Get Started with ZPG Now</a
             >
         </div>
