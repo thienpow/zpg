@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>ZPG - Simple, Fast, and Reliable PostgreSQL in Zig</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                line-height: 1.6;
+                margin: 0;
+                padding: 0;
+                background-color: #f4f4f4;
+                color: #333;
+            }
+            header {
+                background: #1a73e8;
+                color: white;
+                text-align: center;
+                padding: 2rem;
+            }
+            h1 {
+                margin: 0;
+                font-size: 2.5rem;
+            }
+            .container {
+                max-width: 1200px;
+                margin: 0 auto;
+                padding: 2rem;
+            }
+            .feature {
+                background: white;
+                padding: 1.5rem;
+                margin-bottom: 2rem;
+                border-radius: 8px;
+                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            }
+            .feature h2 {
+                color: #1a73e8;
+            }
+            code {
+                background: #f0f0f0;
+                padding: 0.2rem 0.5rem;
+                border-radius: 4px;
+            }
+            pre {
+                background: #f0f0f0;
+                padding: 1rem;
+                border-radius: 4px;
+                overflow-x: auto;
+            }
+            .cta {
+                text-align: center;
+                margin: 2rem 0;
+            }
+            .cta a {
+                background: #1a73e8;
+                color: white;
+                padding: 1rem 2rem;
+                text-decoration: none;
+                border-radius: 5px;
+                font-size: 1.2rem;
+            }
+            .cta a:hover {
+                background: #1557b0;
+            }
+            footer {
+                text-align: center;
+                padding: 1rem;
+                background: #333;
+                color: white;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1>ZPG - PostgreSQL Made Simple and Blazing Fast in Zig</h1>
+            <p>
+                Effortless database interactions with top-tier performance for
+                Zig developers.
+            </p>
+        </header>
+
+        <div class="container">
+            <div class="feature">
+                <h2>Easy Setup with Connection Pooling</h2>
+                <p>
+                    Get started in minutes with a simple configuration and a
+                    powerful connection pool. ZPG handles the heavy lifting so
+                    you can focus on building.
+                </p>
+                <pre><code>var pool = try ConnectionPool.init(allocator, config, 3);
+defer pool.deinit();
+var pooled_conn = try PooledConnection.init(&pool);
+defer pooled_conn.deinit();</code></pre>
+                <p>
+                    Initialize a pool with just 3 connections and acquire one
+                    effortlessly—ZPG manages resources efficiently behind the
+                    scenes.
+                </p>
+            </div>
+
+            <div class="feature">
+                <h2>Prepared Statements for Simplicity and Safety</h2>
+                <p>
+                    Write secure, reusable SQL queries with ease. ZPG’s prepared
+                    statements are intuitive and cached for performance.
+                </p>
+                <pre><code>const prepared_user_one = try query.prepare(
+    "user_one (int8) AS SELECT id, username FROM users WHERE id = $1"
+);</code></pre>
+                <p>
+                    Prepare once, execute anytime—ZPG skips redundant
+                    preparation, saving you time (e.g., from 10 µs to
+                    near-instant reuse).
+                </p>
+            </div>
+
+            <div class="feature">
+                <h2>Blazing Fast Query Execution</h2>
+                <p>
+                    Experience microsecond-level performance for selects and
+                    updates. ZPG is optimized for speed without sacrificing
+                    reliability.
+                </p>
+                <pre><code>const select_result = try query.execute("user_one", params, User);
+// Time taken: ~12 µs
+const update_result = try query.execute("user_update", params_for_user_update, zpg.types.Empty);
+// Time taken: ~15 µs</code></pre>
+                <p>
+                    Benchmarked results show SELECTs and UPDATEs executing in as
+                    little as 12-15 µs—performance you can count on.
+                </p>
+            </div>
+
+            <div class="feature">
+                <h2>Seamless Data Handling</h2>
+                <p>
+                    Map your database rows to Zig structs effortlessly. ZPG
+                    handles memory management so you don’t have to.
+                </p>
+                <pre><code>const User = struct {
+    id: i64,
+    username: []const u8,
+    pub fn deinit(self: User, allocator: std.mem.Allocator) void {
+        allocator.free(self.username);
+    }
+};
+const rows = try query.execute("user_one", params, User);</code></pre>
+                <p>
+                    Define your data model, query, and let ZPG populate
+                    it—complete with automatic cleanup.
+                </p>
+            </div>
+
+            <div class="feature">
+                <h2>Real-World Benchmarking</h2>
+                <p>
+                    See the numbers for yourself—ZPG delivers consistent,
+                    high-speed results across operations.
+                </p>
+                <ul>
+                    <li>Prepare SELECT: ~10 µs</li>
+                    <li>Execute SELECT: ~12 µs</li>
+                    <li>Re-execute SELECT: ~11 µs</li>
+                    <li>Prepare UPDATE: ~13 µs</li>
+                    <li>Execute UPDATE: ~15 µs</li>
+                </ul>
+                <p>
+                    These microsecond timings come straight from real
+                    tests—proof of ZPG’s efficiency.
+                </p>
+            </div>
+        </div>
+
+        <div class="cta">
+            <a href="https://github.com/ziglibs/zpg"
+                >Get Started with ZPG Now</a
+            >
+        </div>
+
+        <footer>
+            <p>
+                &copy; 2025 ZPG Team. Built with Zig for developers, by
+                developers.
+            </p>
+        </footer>
+    </body>
+</html>

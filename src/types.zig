@@ -216,3 +216,17 @@ pub const TransactionStatus = enum {
     InTransaction,
     InFailedTransaction,
 };
+
+pub const Oid = u32;
+
+pub const TypeOids = struct {
+    pub const INT4: Oid = 23;
+    pub const TEXT: Oid = 25;
+    pub const VARCHAR: Oid = 1043;
+    pub const NUMERIC: Oid = 1700; // Important for Decimal
+    pub const TIMESTAMP: Oid = 1114;
+    pub const TIMESTAMPTZ: Oid = 1184;
+    pub const INTERVAL: Oid = 1186;
+    pub const UUID: Oid = 2950;
+    // ... other OIDs ...
+};

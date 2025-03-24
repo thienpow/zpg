@@ -63,16 +63,12 @@ These enhancements aim to broaden `zpg`’s compatibility with PostgreSQL’s ri
 ---
 
 ## **Potential Improvements for `zpg`**
-1. **Better Parameter Handling**
-   - Instead of `[_][]const u8{"1"}`, consider **a dynamic, type-safe parameter builder** that supports:
-     - `?` placeholders in queries (e.g., `WHERE id = ?`)
-     - Automatic type conversion (`int` to `text` when needed)
 
-2. **Support for Asynchronous Queries**
+1. **Support for Asynchronous Queries**
    - Right now, `zpg` executes queries synchronously.
    - Adding **async** (event-driven I/O) would allow non-blocking DB operations (like `tokio-postgres` in Rust).
 
-3. **Automatic Struct Mapping for Complex Queries**
+2. **Automatic Struct Mapping for Complex Queries**
    - Some queries return dynamic column sets (`JOIN` queries, custom views).
    - Right now, users must define exact structs manually.
    - Consider adding **auto-detection of column names** based on PostgreSQL metadata.
