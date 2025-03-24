@@ -23,14 +23,9 @@ Here's how we can modify the `User` struct to include the `Timestamp`:
 
 ```zig
 const std = @import("std");
-
-// Assuming the same Uuid struct as before
-pub const Uuid = struct {
-    bytes: [16]u8,
-    pub const isUuid = true;
-    pub fn fromString(str: []const u8) !Uuid { /* ... */ }
-    fn charToHex(c: u8) !u4 { /* ... */ }
-};
+const zpg = @import("zpg");
+const Uuid = zpg.field.Uuid;
+const Timestamp = zpg.field.Timestamp;
 
 pub const User = struct {
     id: Uuid,
@@ -83,11 +78,5 @@ pub fn main() !void {
     std.debug.print("Created at: {}s {}ns\n", .{user.created_at.seconds, user.created_at.nano_seconds});
 }
 ```
-
-This improved version:
-- Handles timezone offsets
-- Has better date validation
-- Properly parses microseconds/nanoseconds
-- Still works with `processSelectResponses`
 
 The timestamp will be stored as UTC seconds since epoch with nanosecond precision, which is useful for calculations and comparisons. For production use, you might want to use a proper date/time library instead of the simplified conversion logic.

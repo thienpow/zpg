@@ -39,6 +39,8 @@ Here's how you can create a `User` struct that works with the UUID field and the
 
 ```zig
 const std = @import("std");
+const zpg = @import("zpg");
+const Uuid = zpg.field.Uuid;
 
 pub const User = struct {
     id: Uuid,
@@ -103,5 +105,3 @@ And `processSelectResponses` would:
 - The `username` and `email` fields use `[]const u8` because `processSelectResponses` allocates memory for strings, and the caller is responsible for freeing it
 - If you want owned strings, you could change them to something like `std.BoundedArray(u8, 255)` or add a `deinit` method to `User` to manage memory
 - Make sure your PostgreSQL column order matches the struct field order, or modify `processSelectResponses` to handle named columns
-
-This setup should work seamlessly with both PostgreSQL's UUID type and the processing function you provided!

@@ -52,5 +52,12 @@ pub const Interval = struct {
         return interval;
     }
 
+    pub fn toString(self: Interval, allocator: std.mem.Allocator) ![]u8 {
+        var buf = std.ArrayList(u8).init(allocator);
+        defer buf.deinit();
+        try std.fmt.format(buf.writer(), "{} mon {} days {} us", .{ self.months, self.days, self.microseconds });
+        return buf.toOwnedSlice();
+    }
+
     pub const isInterval = true;
 };

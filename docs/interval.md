@@ -45,16 +45,14 @@ Here's how we can update the `User` struct to include the `Interval`:
 
 ```zig
 const std = @import("std");
-
-// Assuming previous Uuid and Timestamp definitions remain the same
-pub const Uuid = struct { /* ... */ };
-pub const Timestamp = struct { /* ... */ };
+const zpg = @import("zpg");
+const Uuid = zpg.field.Uuid;
+const Interval = zpg.field.Interval;
 
 pub const User = struct {
     id: Uuid,
     username: []const u8,
     email: []const u8,
-    created_at: Timestamp,
     subscription_duration: Interval,
 };
 ```
@@ -75,7 +73,6 @@ pub fn main() !void {
         .id = try Uuid.fromString("550e8400-e29b-41d4-a716-446655440000"),
         .username = "johndoe",
         .email = "john@example.com",
-        .created_at = try Timestamp.fromPostgresText("2025-03-24 15:30:45+00", allocator),
         .subscription_duration = interval,
     };
 
@@ -112,16 +109,5 @@ if (part.len > 0 and part[0] == '-') {
 }
 ```
 
-2. Add a `toString` method for debugging:
-```zig
-pub fn toString(self: Interval, allocator: std.mem.Allocator) ![]u8 {
-    var buf = std.ArrayList(u8).init(allocator);
-    defer buf.deinit();
-    try std.fmt.format(buf.writer(), "{} mon {} days {} us", .{
-        self.months, self.days, self.microseconds
-    });
-    return buf.toOwnedSlice();
-}
-```
 
 This `Interval` struct will work seamlessly with `processSelectResponses` and PostgreSQL's INTERVAL type, providing a good foundation for handling time durations in your application.

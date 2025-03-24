@@ -42,24 +42,20 @@ This works with our `Decimal` struct because:
 1. It has `pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Decimal`
 2. It handles NULL by returning a zeroed struct (`value: 0, scale: 0`)
 
-### Updated User Struct with Decimal
+### User Struct with Decimal
 
 Here’s how to integrate the `Decimal` struct into the `User` struct:
 
 ```zig
 const std = @import("std");
-
-// Assuming previous Uuid, Timestamp, and Interval definitions remain
-pub const Uuid = struct { /* ... */ };
-pub const Timestamp = struct { /* ... */ };
-pub const Interval = struct { /* ... */ };
+const zpg = @import("zpg");
+const Uuid = zpg.field.Uuid;
+const Decimal = zpg.field.Decimal;
 
 pub const User = struct {
     id: Uuid,
     username: []const u8,
     email: []const u8,
-    created_at: Timestamp,
-    subscription_duration: Interval,
     account_balance: Decimal,
 };
 ```
@@ -80,8 +76,6 @@ pub fn main() !void {
         .id = try Uuid.fromString("550e8400-e29b-41d4-a716-446655440000"),
         .username = "johndoe",
         .email = "john@example.com",
-        .created_at = try Timestamp.fromPostgresText("2025-03-24 15:30:45+00", allocator),
-        .subscription_duration = try Interval.fromPostgresText("1 mon", allocator),
         .account_balance = decimal,
     };
 
@@ -119,5 +113,3 @@ pub fn withScale(self: Decimal, new_scale: u8) Decimal {
     return Decimal{ .value = self.value / divisor, .scale = new_scale }; // Could add rounding here
 }
 ```
-
-This `Decimal` struct works with `processSelectResponses` via the generic `fromPostgresText` path and handles PostgreSQL’s DECIMAL output effectively for typical financial or precise numeric use cases.
