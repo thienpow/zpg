@@ -13,9 +13,6 @@ CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     username VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    subscription_duration INTERVAL DEFAULT '1 month',
-    account_balance DECIMAL(12, 2) DEFAULT 0.00,
     status user_status DEFAULT 'active'
 );
 ```
@@ -54,12 +51,9 @@ Here’s how to define a matching `UserStatus` enum in Zig and integrate it into
 
 ```zig
 const std = @import("std");
+const zpg = @import("zpg");
+const Uuid = zpg.field.Uuid;
 
-// Assuming previous definitions for Uuid, Timestamp, Interval, and Decimal
-pub const Uuid = struct { /* ... */ };
-pub const Timestamp = struct { /* ... */ };
-pub const Interval = struct { /* ... */ };
-pub const Decimal = struct { /* ... */ };
 
 pub const UserStatus = enum {
     active,
@@ -71,9 +65,6 @@ pub const User = struct {
     id: Uuid,
     username: []const u8,
     email: []const u8,
-    created_at: Timestamp,
-    subscription_duration: Interval,
-    account_balance: Decimal,
     status: UserStatus,
 };
 ```
@@ -105,9 +96,6 @@ pub fn main() !void {
         .id = try Uuid.fromString("550e8400-e29b-41d4-a716-446655440000"),
         .username = "johndoe",
         .email = "john@example.com",
-        .created_at = try Timestamp.fromPostgresText("2025-03-24 15:30:45+00", allocator),
-        .subscription_duration = try Interval.fromPostgresText("1 mon", allocator),
-        .account_balance = try Decimal.fromPostgresText("1234.56", allocator),
         .status = UserStatus.active, // This would come from processSelectResponses
     };
 
