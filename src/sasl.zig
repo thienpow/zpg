@@ -4,6 +4,9 @@ const Allocator = std.mem.Allocator;
 const Connection = @import("connection.zig").Connection;
 const types = @import("types.zig");
 const Error = types.Error;
+const RequestType = types.RequestType;
+const ResponseType = types.ResponseType;
+const AuthType = types.AuthType;
 
 const HmacSha256 = std.crypto.auth.hmac.sha2.HmacSha256;
 const Sha256 = std.crypto.hash.sha2.Sha256;
@@ -55,7 +58,7 @@ pub const SASL = struct {
         try payload.writer().writeInt(i32, @intCast(client_first.len), .big);
         try payload.writer().writeAll(client_first);
 
-        try self.conn.sendMessage('p', payload.items, false);
+        try self.conn.sendMessage(@intFromEnum(RequestType.PasswordMessage), payload.items, false);
     }
 
     // Handle SCRAM challenge and final steps
@@ -65,8 +68,8 @@ pub const SASL = struct {
         var fbs = std.io.fixedBufferStream(buffer[0..msg_len]);
         const reader = fbs.reader();
 
-        const msg_type = try reader.readByte();
-        if (msg_type != 'R') return error.ProtocolError;
+        const response_type: ResponseType = @enumFromInt(try reader.readByte());
+        if (response_type != ResponseType.AuthenticationRequest) return error.ProtocolError;
 
         _ = try reader.readBytesNoEof(4); // Skip length
         const auth_type = try reader.readInt(i32, .big);
@@ -103,7 +106,7 @@ pub const SASL = struct {
 
         const client_final = try self.computeScramFinal(password, salt.?, iterations.?, server_first, server_nonce.?);
         defer self.allocator.free(client_final);
-        try self.conn.sendMessage('p', client_final, false);
+        try self.conn.sendMessage(@intFromEnum(RequestType.PasswordMessage), client_final, false);
 
         try self.handleScramFinal();
     }
@@ -111,7 +114,7 @@ pub const SASL = struct {
     // Send client-final-message
     fn sendScramClientFinal(self: *SASL, client_final: []const u8) !void {
         // Simply call sendMessage directly with the client_final data
-        try self.conn.sendMessage('p', client_final, false);
+        try self.conn.sendMessage(@intFromEnum(RequestType.PasswordMessage), client_final, false);
     }
 
     // Handle server-final-message
@@ -121,14 +124,13 @@ pub const SASL = struct {
         var fbs = std.io.fixedBufferStream(buffer[0..msg_len]);
         const reader = fbs.reader();
 
-        const msg_type = try reader.readByte();
-        switch (msg_type) {
-            'R' => {
+        const response_type: ResponseType = @enumFromInt(try reader.readByte());
+        switch (response_type) {
+            .AuthenticationRequest => {
                 _ = try reader.readBytesNoEof(4); // Skip length
-                const auth_type = try reader.readInt(i32, .big);
-                if (auth_type != 12) {
-                    return error.ProtocolError;
-                }
+                const auth_type: AuthType = @enumFromInt(try reader.readInt(i32, .big));
+                if (auth_type != .SaslContinue) return error.ProtocolError;
+
                 const remaining_len = msg_len - 5;
                 const server_final = try reader.readAllAlloc(self.allocator, remaining_len);
                 defer self.allocator.free(server_final);
@@ -170,13 +172,7 @@ pub const SASL = struct {
                 self.scram_auth_msg = null;
                 self.scram_iterations = null;
             },
-            'E' => {
-                // const payload_len = msg_len - 1;
-                // for (buffer[1..msg_len]) |b| std.debug.print("{x:0>2} ", .{b});
-                // var error_buf: [1024]u8 = undefined;
-                // const error_len = try reader.readAll(error_buf[0..payload_len]);
-                // const error_msg = error_buf[0..error_len];
-                // std.debug.print("handleScramFinal: ErrorResponse: {s}\n", .{error_msg});
+            .ErrorResponse => {
                 return error.AuthenticationFailed;
             },
             else => {
@@ -236,19 +232,5 @@ pub const SASL = struct {
         _ = std.base64.standard.Encoder.encode(encoded, &nonce);
 
         return encoded;
-    }
-
-    // Compute HMAC-SHA-256
-    fn hmacSha256(_: *SASL, key: []const u8, data: []const u8) ![32]u8 {
-        var result: [32]u8 = undefined;
-        crypto.auth.hmac.sha2.HmacSha256.create(&result, key, data);
-        return result;
-    }
-
-    // Compute SHA-256
-    fn sha256(_: *SASL, data: []const u8) ![32]u8 {
-        var result: [32]u8 = undefined;
-        crypto.hash.sha2.Sha256.hash(data, &result, .{});
-        return result;
     }
 };

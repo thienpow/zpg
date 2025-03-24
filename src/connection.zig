@@ -10,6 +10,8 @@ const Action = types.Action;
 const Error = types.Error;
 const ConnectionState = types.ConnectionState;
 const TypeInfo = types.TypeInfo;
+const RequestType = types.RequestType;
+const ResponseType = types.ResponseType;
 
 const net_utils = @import("net.zig");
 const Config = @import("config.zig").Config;
@@ -41,7 +43,7 @@ pub const Connection = struct {
     /// Closes the connection and cleans up resources
     pub fn deinit(self: *Connection) void {
         if (self.state == .Connected) {
-            self.sendTermination() catch |err| {
+            self.sendMessage(@intFromEnum(RequestType.Terminate), "", true) catch |err| {
                 std.debug.print("Failed to send termination: {}\n", .{err});
             };
         }
@@ -71,17 +73,18 @@ pub const Connection = struct {
             const msg_len = try self.readMessage(&buffer);
             var fbs = std.io.fixedBufferStream(buffer[0..msg_len]);
             const reader = fbs.reader();
-            const msg_type = try reader.readByte();
 
-            switch (msg_type) {
-                'S' => {
+            const response_type: ResponseType = @enumFromInt(try reader.readByte());
+
+            switch (response_type) {
+                .ParameterStatus => {
                     // ParameterStatus: key-value pair
                     const key = try reader.readUntilDelimiterAlloc(self.allocator, 0, 256);
                     defer self.allocator.free(key);
                     const value = try reader.readUntilDelimiterAlloc(self.allocator, 0, 256);
                     defer self.allocator.free(value);
                 },
-                'K' => {
+                .BackendKeyData => {
                     // BackendKeyData: PID and secret key
                     const pid = try reader.readInt(i32, .big);
                     const secret = try reader.readInt(i32, .big);
@@ -89,14 +92,14 @@ pub const Connection = struct {
                     _ = secret;
                     // Optionally store these in Connection for cancellation support
                 },
-                'Z' => {
+                .ReadyForQuery => {
                     // ReadyForQuery
                     const status = try reader.readByte();
                     _ = status;
                     self.state = .Connected;
                     break;
                 },
-                'E' => {
+                .ErrorResponse => {
                     const err_msg = buffer[1..msg_len];
                     std.debug.print("ErrorResponse: {s}\n", .{err_msg});
                     self.state = .Error;
@@ -114,7 +117,7 @@ pub const Connection = struct {
     }
 
     /// Generic method to send a PostgreSQL message
-    pub fn sendMessage(self: *Connection, msg_type: u8, payload: []const u8, append_null: bool) !void {
+    pub fn sendMessage(self: *Connection, request_type: u8, payload: []const u8, append_null: bool) !void {
         // Calculate total message size: 1 (type) + 4 (length) + payload + optional null
         const total_size = 1 + 4 + payload.len + @intFromBool(append_null);
 
@@ -128,7 +131,7 @@ pub const Connection = struct {
         const writer = buffer.writer();
 
         // Write message type
-        try writer.writeByte(msg_type);
+        try writer.writeByte(request_type);
 
         // Write length (includes length field itself, excludes type byte)
         const length = 4 + payload.len + @intFromBool(append_null);
@@ -149,8 +152,8 @@ pub const Connection = struct {
     pub fn readMessageType(self: *Connection, buffer: []u8) !struct { type: u8, len: usize } {
         const total_len = try self.readMessage(buffer);
         if (total_len < 1) return error.ProtocolError;
-        const msg_type = buffer[0];
-        return .{ .type = msg_type, .len = total_len };
+        const response_type = buffer[0];
+        return .{ .type = response_type, .len = total_len };
     }
 
     /// Reads a message from the server, returning the length including type byte
@@ -206,10 +209,5 @@ pub const Connection = struct {
 
         // Send startup message
         try self.stream.writeAll(buffer[0..@intCast(len)]);
-    }
-
-    /// Sends a termination message
-    fn sendTermination(self: *Connection) types.Error!void {
-        try self.sendMessage('X', "", true);
     }
 };

@@ -10,6 +10,8 @@ const ExplainRow = types.ExplainRow;
 const Result = types.Result;
 const Empty = types.Empty;
 const Action = types.Action;
+const RequestType = types.RequestType;
+const ResponseType = types.ResponseType;
 
 const Param = @import("param.zig").Param;
 
@@ -72,7 +74,7 @@ pub const Query = struct {
             allocated_full_sql = true;
         }
 
-        try self.conn.sendMessage('Q', full_sql, true);
+        try self.conn.sendMessage(@intFromEnum(RequestType.Query), full_sql, true);
 
         const owned_name = try self.allocator.dupe(u8, stmt_name);
         const action = try self.parsePrepareStatementAction(full_sql);
@@ -104,8 +106,9 @@ pub const Query = struct {
         } else {
             // Slow path: Use extended query protocol for NULL params
             try self.sendBindMessage(name, params);
-            try self.conn.sendMessage('E', &[_]u8{0}, false); // Execute message (empty portal)
-            try self.conn.sendMessage('S', &[_]u8{}, false); // Sync message
+
+            try self.conn.sendMessage(@intFromEnum(RequestType.Execute), &[_]u8{0}, false); // Execute message (empty portal)
+            try self.conn.sendMessage(@intFromEnum(RequestType.Sync), &[_]u8{}, false); // Sync message
 
             if (self.conn.statement_cache.get(name)) |action| {
                 switch (action) {
@@ -131,7 +134,7 @@ pub const Query = struct {
     }
 
     pub fn run(self: *Query, sql: []const u8, comptime T: type) !Result(T) {
-        try self.conn.sendMessage('Q', sql, true);
+        try self.conn.sendMessage(@intFromEnum(RequestType.Query), sql, true);
         const trimmed = std.mem.trim(u8, sql, " \t\n");
         const upper = trimmed[0..@min(trimmed.len, 10)];
 
@@ -221,23 +224,7 @@ pub const Query = struct {
         // Result format code section (we want text results)
         try writer.writeInt(u16, 0, .big);
 
-        try self.conn.sendMessage('B', buffer.items, false);
-    }
-
-    fn sendExecuteMessage(self: *Query) !void {
-        var buffer = std.ArrayList(u8).init(self.allocator);
-        defer buffer.deinit();
-        const writer = buffer.writer();
-
-        //try writer.writeAll(self.portal_name);
-        try writer.writeByte(0);
-        try writer.writeInt(i32, 0, .big);
-
-        try self.conn.sendMessage('E', buffer.items, false);
-    }
-
-    fn sendSyncMessage(self: *Query) !void {
-        try self.conn.sendMessage('S', "", false);
+        try self.conn.sendMessage(@intFromEnum(RequestType.Bind), buffer.items, false);
     }
 
     fn writeParameterValue(writer: anytype, param: Param) !void {
@@ -326,16 +313,18 @@ pub const Query = struct {
         var return_value: u64 = 0;
         while (true) {
             const result = try self.conn.readMessageType(&buffer);
-            const msg_type = result.type;
+            const response_type: ResponseType = @enumFromInt(result.type);
+
             const msg_len = result.len;
             var fbs = std.io.fixedBufferStream(buffer[5..msg_len]);
             const reader = fbs.reader().any();
 
-            switch (msg_type) {
-                'T', 'D' => {
-                    // ignore
+            switch (response_type) {
+                .RowDescription, .DataRow => {
+                    // ignore, even if it will arrive here.
+                    // TODO: keep this empty section here for future improvement.
                 },
-                'C' => {
+                .CommandComplete => {
                     const command_tag = try reader.readUntilDelimiterAlloc(self.allocator, 0, 1024);
                     defer self.allocator.free(command_tag);
                     std.debug.print("Command tag: {s}\n", .{command_tag});
@@ -343,10 +332,10 @@ pub const Query = struct {
                     const count_str = command_tag[space_idx + 1 ..];
                     return_value = try std.fmt.parseInt(u64, count_str, 10);
                 },
-                'Z' => return return_value, // Shouldn't reach here without 'C'
-                'E' => return error.DatabaseError,
+                .ReadyForQuery => return return_value, // Shouldn't reach here without 'C'
+                .ErrorResponse => return error.DatabaseError,
                 else => {
-                    std.debug.print("Bad thing happen, {c}", .{msg_type});
+                    std.debug.print("Bad thing happen, response_type: {}", .{response_type});
                     return error.ProtocolError;
                 },
             }
@@ -359,28 +348,32 @@ pub const Query = struct {
         var success = false;
         while (true) {
             const result = try self.conn.readMessageType(&buffer);
-            const msg_type = result.type;
+            const response_type: ResponseType = @enumFromInt(result.type);
+
             const msg_len = result.len;
             var fbs = std.io.fixedBufferStream(buffer[5..msg_len]);
             const reader = fbs.reader().any();
 
-            switch (msg_type) {
-                'C' => {
-                    // Command Complete - just verify it’s there
+            switch (response_type) {
+                .CommandComplete => {
+                    // CommandComplete - just verify it’s there
                     const command_tag = try reader.readUntilDelimiterAlloc(self.allocator, 0, 1024);
                     defer self.allocator.free(command_tag);
                     // Could optionally check command_tag for specific completion status
                     success = true;
                 },
-                'Z' => {
-                    // Ready for Query - transaction complete
+                .ReadyForQuery => {
+                    // ReadyForQuery - transaction complete
                     return success;
                 },
-                'E' => {
+                .ErrorResponse => {
                     // ErrorResponse - handle database errors
                     return error.DatabaseError;
                 },
-                else => return error.ProtocolError,
+                else => {
+                    std.debug.print("Bad thing happen, response_type: {}", .{response_type});
+                    return error.ProtocolError;
+                },
             }
         }
     }
@@ -392,18 +385,19 @@ pub const Query = struct {
 
         while (true) {
             const result = try self.conn.readMessageType(&buffer);
-            const msg_type = result.type;
+            const response_type: ResponseType = @enumFromInt(result.type);
+
             const msg_len = result.len;
             var fbs = std.io.fixedBufferStream(buffer[5..msg_len]);
             const reader = fbs.reader().any();
 
-            switch (msg_type) {
-                'T' => {
-                    // Row Description - verify we have expected columns
+            switch (response_type) {
+                .RowDescription => {
+                    // RowDescription - verify we have expected columns
                     const column_count = try reader.readInt(u16, .big);
                     if (column_count < 4) return error.InvalidExplainFormat; // Minimum expected columns
                 },
-                'D' => {
+                .DataRow => {
                     // Data Row
                     const column_count = try reader.readInt(u16, .big);
                     if (column_count < 4) return error.InvalidExplainFormat;
@@ -434,13 +428,16 @@ pub const Query = struct {
 
                     try rows.append(row);
                 },
-                'C' => {
+                .CommandComplete => {
                     // Command Complete - ignore for EXPLAIN
                 },
-                'Z' => {
+                .ReadyForQuery => {
                     return try rows.toOwnedSlice();
                 },
-                else => return error.ProtocolError,
+                else => {
+                    std.debug.print("Bad thing happen, response_type: {}", .{response_type});
+                    return error.ProtocolError;
+                },
             }
         }
     }
@@ -793,21 +790,21 @@ pub const Query = struct {
 
         while (true) {
             const result = try self.conn.readMessageType(&buffer);
-            const msg_type = result.type;
+            const response_type: ResponseType = @enumFromInt(result.type);
             const msg_len = result.len;
             var fbs = std.io.fixedBufferStream(buffer[5..msg_len]);
             const reader = fbs.reader().any();
 
-            switch (msg_type) {
-                '2' => {
+            switch (response_type) {
+                .BindComplete => {
                     // ignnore BindComplete
                 },
-                'T' => {
+                .RowDescription => {
                     // Row Description - verify column count
                     const column_count = try reader.readInt(u16, .big);
                     if (column_count != expected_columns) return error.ColumnCountMismatch;
                 },
-                'D' => {
+                .DataRow => {
                     const column_count = try reader.readInt(u16, .big);
                     if (column_count != expected_columns) return error.ColumnCountMismatch;
 
@@ -817,7 +814,7 @@ pub const Query = struct {
                     }
                     try rows.append(instance);
                 },
-                'C' => {
+                .CommandComplete => {
                     // CommandComplete
                     const command_tag = try reader.readUntilDelimiterAlloc(self.allocator, 0, 1024);
                     defer self.allocator.free(command_tag);
@@ -825,7 +822,7 @@ pub const Query = struct {
                         return error.NotASelectQuery; // Fail if not a SELECT response
                     }
                 },
-                'Z' => {
+                .ReadyForQuery => {
                     const owned_slice = try rows.toOwnedSlice();
                     if (owned_slice.len == 0) {
                         return null;
@@ -833,7 +830,7 @@ pub const Query = struct {
                     return owned_slice;
                 },
                 else => {
-                    std.debug.print("Bad thing happen, msg_type: {c}", .{msg_type});
+                    std.debug.print("Bad thing happen, response_type: {}", .{response_type});
                     return error.ProtocolError;
                 },
             }

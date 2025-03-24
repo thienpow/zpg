@@ -107,13 +107,32 @@ pub const Error = error{
     UnknownAuthMethod,
 };
 
-pub const AuthType = enum(u32) {
-    Cleartext = 3,
-    MD5 = 5,
-    // Add other auth types as needed
+pub const AuthType = enum(i32) {
+    AuthenticationOk = 0, // Successful authentication
+    KerberosV5 = 2, // Kerberos V5 authentication
+    CleartextPassword = 3, // Cleartext password
+    Md5Password = 5, // MD5-hashed password
+    ScmCredentials = 6, // SCM credentials (Unix domain sockets)
+    Gssapi = 7, // GSSAPI authentication
+    Sspi = 9, // SSPI (Windows-specific)
+    Sasl = 10, // SASL (e.g., SCRAM-SHA-256)
+    SaslContinue = 12, // SASL Continue
+
 };
 
-pub const MessageType = enum(u8) {
+pub const RequestType = enum(u8) {
+    Query = 'Q',
+    Parse = 'P',
+    Bind = 'B',
+    Describe = 'D', // Note: Overlaps with DataRow, see below
+    Execute = 'E', // Note: Overlaps with ErrorResponse, see below
+    Sync = 'S', // Note: Overlaps with ParameterStatus, see below
+    Close = 'C', // Note: Overlaps with CommandComplete, see below
+    Terminate = 'X',
+    PasswordMessage = 'p',
+};
+
+pub const ResponseType = enum(u8) {
     AuthenticationRequest = 'R',
     ParameterStatus = 'S',
     BackendKeyData = 'K',
@@ -122,20 +141,15 @@ pub const MessageType = enum(u8) {
     DataRow = 'D',
     CommandComplete = 'C',
     ErrorResponse = 'E',
-    // Add other message types as needed
-};
-
-pub const IsolationLevel = enum {
-    ReadUncommitted,
-    ReadCommitted,
-    RepeatableRead,
-    Serializable,
-};
-
-pub const TransactionStatus = enum {
-    Idle,
-    InTransaction,
-    InFailedTransaction,
+    NoticeResponse = 'N',
+    NotificationResponse = 'A',
+    BindComplete = '2',
+    ParseComplete = '1',
+    CopyInResponse = 'G',
+    CopyOutResponse = 'H',
+    CopyData = 'd',
+    CopyDone = 'c',
+    EmptyQueryResponse = 'I',
 };
 
 pub const ConnectionState = enum {
@@ -188,4 +202,17 @@ pub fn Result(comptime T: type) type {
 
 pub const Empty = struct {
     placeholder: usize,
+};
+
+pub const IsolationLevel = enum {
+    ReadUncommitted,
+    ReadCommitted,
+    RepeatableRead,
+    Serializable,
+};
+
+pub const TransactionStatus = enum {
+    Idle,
+    InTransaction,
+    InFailedTransaction,
 };
