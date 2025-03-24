@@ -160,11 +160,11 @@ const rows = try query.execute("user_one", params, User);</code></pre>
                     high-speed results across operations.
                 </p>
                 <ul>
-                    <li>Prepare SELECT: ~10 µs</li>
-                    <li>Execute SELECT: ~12 µs</li>
-                    <li>Re-execute SELECT: ~11 µs</li>
-                    <li>Prepare UPDATE: ~13 µs</li>
-                    <li>Execute UPDATE: ~15 µs</li>
+                    <li>Prepare SELECT: ~300-1000 µs</li>
+                    <li>Execute SELECT: ~300-1000 µs</li>
+                    <li>Re-execute SELECT: ~200-500 µs</li>
+                    <li>Prepare UPDATE: ~1000+ µs</li>
+                    <li>Execute UPDATE: ~1000+ µs</li>
                 </ul>
                 <p>
                     These microsecond timings come straight from real
