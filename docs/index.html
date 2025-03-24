@@ -70,6 +70,13 @@
                 background: #333;
                 color: white;
             }
+            .docs-links a {
+                color: #1a73e8;
+                text-decoration: none;
+            }
+            .docs-links a:hover {
+                text-decoration: underline;
+            }
         </style>
     </head>
     <body>
@@ -115,8 +122,7 @@ const prepared_user_one = try query.prepare(
                 </code></pre>
                 <p>
                     Prepare once, execute anytime—ZPG skips redundant
-                    preparation, saving you time (e.g., from 10 µs to
-                    near-instant reuse).
+                    preparation, saving you time (near-instant reuse).
                 </p>
             </div>
 
@@ -125,17 +131,23 @@ const prepared_user_one = try query.prepare(
                 <p>
                     Experience microsecond-level performance for selects and
                     updates. ZPG is optimized for speed without sacrificing
-                    reliability.
+                    reliability. Create queries directly from your pooled
+                    connection and execute them with ease.
                 </p>
                 <pre><code>
+var query = pooled_conn.createQuery(allocator);
+defer query.deinit();
+
 const select_result = try query.execute("user_one", params, User);
-// Time taken: ~220 µs
 const update_result = try query.execute("user_update", params_for_user_update, zpg.types.Empty);
-// Time taken: ~1002 µs
                 </code></pre>
                 <p>
-                    Benchmarked results show SELECTs and UPDATEs executing in as
-                    little as 200-1500 µs—performance you can count on.
+                    Use <code>createQuery</code> to instantiate a query object
+                    from your pooled connection, then execute prepared
+                    statements with minimal overhead. The
+                    <code>defer query.deinit()</code> ensures resources are
+                    cleaned up automatically. Benchmarked results show the
+                    performance you can count on.
                 </p>
             </div>
 
@@ -162,22 +174,37 @@ const rows = try query.execute("user_one", params, User);
             </div>
 
             <div class="feature">
-                <h2>Real-World Benchmarking</h2>
+                <h2>Detailed Type Documentation</h2>
                 <p>
-                    See the numbers for yourself—ZPG delivers consistent,
-                    high-speed results across operations.
+                    Learn how ZPG handles PostgreSQL’s advanced data types with
+                    our comprehensive guides. Each document provides in-depth
+                    explanations and examples for integrating these types into
+                    your Zig structs.
                 </p>
-                <ul>
-                    <li>Prepare SELECT: ~300-1000 µs</li>
-                    <li>Execute SELECT: ~300-1000 µs</li>
-                    <li>Re-execute SELECT: ~200-500 µs</li>
-                    <li>Prepare UPDATE: ~1000+ µs</li>
-                    <li>Execute UPDATE: ~1000+ µs</li>
+                <ul class="docs-links">
+                    <li>
+                        <a href="./decimal.md">Decimal</a> - Handle precise
+                        numeric values like account balances with ZPG’s decimal
+                        support.
+                    </li>
+                    <li>
+                        <a href="./enum.md">Enum</a> - Map PostgreSQL ENUM types
+                        to Zig enums for type-safe status fields.
+                    </li>
+                    <li>
+                        <a href="./interval.md">Interval</a> - Work with time
+                        durations like subscription periods using ZPG’s interval
+                        handling.
+                    </li>
+                    <li>
+                        <a href="./timestamp.md">Timestamp</a> - Manage date and
+                        time fields with precision, including timezone support.
+                    </li>
+                    <li>
+                        <a href="./uuid.md">UUID</a> - Utilize PostgreSQL UUIDs
+                        for unique identifiers in your Zig application.
+                    </li>
                 </ul>
-                <p>
-                    These microsecond timings come straight from real
-                    tests—proof of ZPG’s efficiency.
-                </p>
             </div>
         </div>
 
@@ -189,8 +216,7 @@ const rows = try query.execute("user_one", params, User);
 
         <footer>
             <p>
-                &copy; 2025 ZPG Team. Built with Zig for developers, by
-                developers.
+                © 2025 ZPG Team. Built with Zig for developers, by developers.
             </p>
         </footer>
     </body>
