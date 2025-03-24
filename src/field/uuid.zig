@@ -2,7 +2,6 @@ const std = @import("std");
 
 pub const Uuid = struct {
     bytes: [16]u8,
-
     pub const isUuid = true;
 
     pub fn fromString(str: []const u8) !Uuid {

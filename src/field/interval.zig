@@ -7,40 +7,44 @@ pub const Interval = struct {
 
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Interval {
         _ = allocator;
-        // Parse PostgreSQL interval format
-        // Example: "1 year 2 months 3 days 4 hours 5 minutes 6.789 seconds"
-
         var interval = Interval{
             .months = 0,
             .days = 0,
             .microseconds = 0,
         };
 
-        // Simple parsing logic - production code would be more robust
         var parts = std.mem.split(u8, text, " ");
         var i: usize = 0;
+        var last_value: ?i32 = null;
 
         while (parts.next()) |part| {
             if (i % 2 == 0) {
-                // This should be a number
-                const value = std.fmt.parseInt(i32, part, 10) catch continue;
-
-                // Get the unit (next part)
-                const unit = parts.next() orelse break;
-
-                if (std.mem.startsWith(u8, unit, "year")) {
+                // Handle number
+                last_value = std.fmt.parseInt(i32, part, 10) catch continue;
+            } else if (last_value) |value| {
+                // Handle unit
+                if (std.mem.startsWith(u8, part, "year")) {
                     interval.months += value * 12;
-                } else if (std.mem.startsWith(u8, unit, "month")) {
+                } else if (std.mem.startsWith(u8, part, "mon")) { // "mon" for "months"
                     interval.months += value;
-                } else if (std.mem.startsWith(u8, unit, "day")) {
+                } else if (std.mem.startsWith(u8, part, "day")) {
                     interval.days += value;
-                } else if (std.mem.startsWith(u8, unit, "hour")) {
+                } else if (std.mem.startsWith(u8, part, "hour")) {
                     interval.microseconds += value * 3600 * 1_000_000;
-                } else if (std.mem.startsWith(u8, unit, "minute")) {
+                } else if (std.mem.startsWith(u8, part, "min")) { // "min" for "minutes"
                     interval.microseconds += value * 60 * 1_000_000;
-                } else if (std.mem.startsWith(u8, unit, "second")) {
-                    interval.microseconds += value * 1_000_000;
+                } else if (std.mem.startsWith(u8, part, "sec")) { // "sec" for "seconds"
+                    // Check for decimal seconds
+                    if (i > 1 and parts.peek() == null) {
+                        // Last part might be a float like "6.789"
+                        const float_val = std.fmt.parseFloat(f64, parts.buffer[parts.index - part.len - 1 ..]) catch value;
+                        interval.microseconds += @as(i64, @intFromFloat(float_val * 1_000_000));
+                        break;
+                    } else {
+                        interval.microseconds += value * 1_000_000;
+                    }
                 }
+                last_value = null;
             }
             i += 1;
         }

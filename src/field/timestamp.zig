@@ -1,71 +1,89 @@
 const std = @import("std");
 
 pub const Timestamp = struct {
-    seconds: i64, // Seconds since Unix epoch
-    nano_seconds: u32, // Nanoseconds part
+    seconds: i64,
+    nano_seconds: u32,
 
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Timestamp {
         _ = allocator;
-        // Parse ISO 8601 timestamp: 2023-04-15 10:30:45.123456
-        // This is a simplified parser - production code might need more robust parsing
+        if (text.len < 19) return error.InvalidTimestampFormat;
 
         var timestamp: Timestamp = .{ .seconds = 0, .nano_seconds = 0 };
 
-        // Example implementation - adapt to your specific timestamp format
-        if (text.len < 19) return error.InvalidTimestampFormat; // Minimum "YYYY-MM-DD HH:MM:SS"
-
-        const year = try std.fmt.parseInt(u16, text[0..4], 10);
+        const year = try std.fmt.parseInt(i16, text[0..4], 10);
         const month = try std.fmt.parseInt(u8, text[5..7], 10);
         const day = try std.fmt.parseInt(u8, text[8..10], 10);
         const hour = try std.fmt.parseInt(u8, text[11..13], 10);
         const minute = try std.fmt.parseInt(u8, text[14..16], 10);
         const second = try std.fmt.parseInt(u8, text[17..19], 10);
 
-        // Convert to seconds since epoch using standard library or custom function
-        const seconds = calculateUnixTimestamp(year, month, day, hour, minute, second);
-        timestamp.seconds = seconds;
+        var seconds = try toUnixSeconds(year, month, day, hour, minute, second);
 
-        // Parse fractional seconds if present
-        if (text.len > 20 and text[19] == '.') {
-            var nano_str = text[20..];
-            // Pad or truncate to 9 digits for nanoseconds
-            var nano_pad: [9]u8 = [_]u8{'0'} ** 9;
-            const copy_len = @min(nano_str.len, 9);
-            std.mem.copy(u8, &nano_pad, nano_str[0..copy_len]);
-            timestamp.nano_seconds = try std.fmt.parseInt(u32, &nano_pad, 10);
+        // Handle fractional seconds and timezone
+        if (text.len > 19) {
+            var pos: usize = 19;
+            if (text[pos] == '.') {
+                pos += 1;
+                var nano_end: usize = pos;
+                while (nano_end < text.len and text[nano_end] >= '0' and text[nano_end] <= '9') {
+                    nano_end += 1;
+                }
+                if (nano_end > pos) {
+                    var nano_pad: [9]u8 = [_]u8{'0'} ** 9;
+                    const digits = @min(nano_end - pos, 9);
+                    std.mem.copy(u8, &nano_pad, text[pos .. pos + digits]);
+                    timestamp.nano_seconds = try std.fmt.parseInt(u32, &nano_pad, 10);
+                    pos = nano_end;
+                }
+            }
+
+            // Handle timezone offset (e.g., "+00" or "-05:30")
+            if (pos < text.len and (text[pos] == '+' or text[pos] == '-')) {
+                const sign = if (text[pos] == '+') 1 else -1;
+                pos += 1;
+                const tz_hour = try std.fmt.parseInt(i8, text[pos .. pos + 2], 10);
+                pos += 2;
+                var tz_minute: i8 = 0;
+                if (pos < text.len and text[pos] == ':') {
+                    tz_minute = try std.fmt.parseInt(i8, text[pos + 1 .. pos + 3], 10);
+                }
+                const tz_offset = sign * (tz_hour * 3600 + tz_minute * 60);
+                seconds -= tz_offset; // Adjust to UTC
+            }
         }
 
+        timestamp.seconds = seconds;
         return timestamp;
     }
 
-    // Helper to calculate Unix timestamp from date components
-    fn calculateUnixTimestamp(year: u16, month: u8, day: u8, hour: u8, minute: u8, second: u8) i64 {
-        // This is a placeholder - you would implement actual date-to-epoch conversion
-        // You might want to use a library or implement proper date/time calculations
-
-        // Simple approximation (not accurate for production)
-        var seconds: i64 = 0;
-        seconds += @as(i64, year - 1970) * 365 * 24 * 60 * 60;
-        seconds += @as(i64, (year - 1969) / 4) * 24 * 60 * 60; // Leap years
-
-        const days_in_month = [_]u8{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
-        var month_days: i64 = 0;
-        for (days_in_month[0 .. month - 1], 0..) |days, i| {
-            month_days += days;
-            // Handle leap year February
-            if (i == 1 and isLeapYear(year)) month_days += 1;
+    fn toUnixSeconds(year: i16, month: u8, day: u8, hour: u8, minute: u8, second: u8) !i64 {
+        // More accurate conversion - still simplified
+        if (year < 1970 or month < 1 or month > 12 or day < 1 or day > 31 or
+            hour > 23 or minute > 59 or second > 59)
+        {
+            return error.InvalidDateTime;
         }
 
-        seconds += month_days * 24 * 60 * 60;
-        seconds += @as(i64, day - 1) * 24 * 60 * 60;
-        seconds += @as(i64, hour) * 60 * 60;
-        seconds += @as(i64, minute) * 60;
-        seconds += second;
+        const days_in_month = [_]u8{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+        var days: i64 = 0;
 
-        return seconds;
+        // Days from 1970 to year-1
+        for (1970..year) |y| {
+            days += if (isLeapYear(@intCast(y))) 366 else 365;
+        }
+
+        // Days in current year up to month-1
+        for (0..month - 1) |m| {
+            var month_days = days_in_month[m];
+            if (m == 1 and isLeapYear(year)) month_days = 29;
+            days += month_days;
+        }
+
+        days += day - 1;
+        return days * 86400 + @as(i64, hour) * 3600 + minute * 60 + second;
     }
 
-    fn isLeapYear(year: u16) bool {
+    fn isLeapYear(year: i16) bool {
         return (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0);
     }
 
