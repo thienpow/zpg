@@ -6,12 +6,12 @@ const posix = std.posix;
 const Auth = @import("auth.zig").Auth;
 
 const types = @import("types.zig");
-const Action = types.Action;
 const Error = types.Error;
 const ConnectionState = types.ConnectionState;
 const TypeInfo = types.TypeInfo;
 const RequestType = types.RequestType;
 const ResponseType = types.ResponseType;
+const CommandType = types.CommandType;
 
 const net_utils = @import("net.zig");
 const Config = @import("config.zig").Config;
@@ -21,7 +21,7 @@ pub const Connection = struct {
     allocator: mem.Allocator,
     state: ConnectionState = .Disconnected,
     config: Config,
-    statement_cache: std.StringHashMap(Action),
+    statement_cache: std.StringHashMap(CommandType),
 
     /// PostgreSQL protocol version (3.0 by default)
     protocol_version: u32 = 0x30000,
@@ -36,7 +36,7 @@ pub const Connection = struct {
             .allocator = allocator,
             .state = .Disconnected,
             .config = config,
-            .statement_cache = std.StringHashMap(Action).init(allocator),
+            .statement_cache = std.StringHashMap(CommandType).init(allocator),
         };
     }
 

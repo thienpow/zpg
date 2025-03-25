@@ -9,9 +9,10 @@ const Error = types.Error;
 const ExplainRow = types.ExplainRow;
 const Result = types.Result;
 const Empty = types.Empty;
-const Action = types.Action;
+
 const RequestType = types.RequestType;
 const ResponseType = types.ResponseType;
+const CommandType = types.CommandType;
 
 const Param = @import("param.zig").Param;
 
@@ -141,7 +142,7 @@ pub const Query = struct {
                     .Insert, .Update, .Delete => {
                         return Result(T){ .command = try self.processCommandResponses() };
                     },
-                    .Other => {
+                    else => {
                         return Result(T){ .success = try self.processSimpleCommand() };
                     },
                 }
@@ -157,70 +158,57 @@ pub const Query = struct {
     /// For EXECUTE statements, it executes the prepared statement and returns the result based on
     /// the statement's action.
     pub fn run(self: *Query, sql: []const u8, comptime T: type) !Result(T) {
+        const trimmed = std.mem.trim(u8, sql, " \t\n");
+        const command = trimmed[0..@min(trimmed.len, 10)];
+        const cmd_type = getCommandType(command);
+
         try self.conn.sendMessage(@intFromEnum(RequestType.Query), sql, true);
 
-        const trimmed = std.mem.trim(u8, sql, " \t\n");
-        const upper = trimmed[0..@min(trimmed.len, 10)];
+        return switch (cmd_type) {
+            .Select => Result(T){
+                .select = (try self.processSelectResponses(T)) orelse &[_]T{},
+            },
+            .Insert, .Update, .Delete, .Merge => Result(T){
+                .command = try self.processCommandResponses(),
+            },
+            .Prepare => blk: {
+                const result = try self.processSimpleCommand();
+                const stmt_name = try self.parsePrepareStatementName(sql);
+                const action = try self.parsePrepareStatementAction(sql);
+                const owned_name = try self.allocator.dupe(u8, stmt_name);
+                try self.conn.statement_cache.put(owned_name, action);
+                break :blk Result(T){ .success = result };
+            },
+            .Create, .Alter, .Drop, .Grant, .Revoke, .Commit, .Rollback => Result(T){
+                .success = try self.processSimpleCommand(),
+            },
+            .Explain => Result(T){
+                .explain = try self.processExplainResponses(),
+            },
+            .Execute => blk: {
+                const stmt_name = try self.parseExecuteStatementName(sql);
+                std.debug.print("Executing {s}\n", .{stmt_name});
 
-        if (std.mem.startsWith(u8, upper, "SELECT") or
-            std.mem.startsWith(u8, upper, "WITH"))
-        {
-            return Result(T){ .select = (try self.processSelectResponses(T)) orelse &[_]T{} };
-        } else if (std.mem.startsWith(u8, upper, "INSERT") or
-            std.mem.startsWith(u8, upper, "UPDATE") or
-            std.mem.startsWith(u8, upper, "DELETE") or
-            std.mem.startsWith(u8, upper, "MERGE"))
-        {
-            return Result(T){ .command = try self.processCommandResponses() };
-        } else if (std.mem.startsWith(u8, upper, "PREPARE")) {
-            const result = try self.processSimpleCommand();
+                const action = self.conn.statement_cache.get(stmt_name) orelse return error.UnknownPreparedStatement;
 
-            const stmt_name = try self.parsePrepareStatementName(sql);
-            const action = try self.parsePrepareStatementAction(sql);
-            const owned_name = try self.allocator.dupe(u8, stmt_name);
-
-            try self.conn.statement_cache.put(owned_name, action);
-
-            return Result(T){
-                .success = result,
-            };
-        } else if (std.mem.startsWith(u8, upper, "CREATE") or
-            std.mem.startsWith(u8, upper, "ALTER") or
-            std.mem.startsWith(u8, upper, "DROP") or
-            std.mem.startsWith(u8, upper, "GRANT") or
-            std.mem.startsWith(u8, upper, "REVOKE") or
-            std.mem.startsWith(u8, upper, "COMMIT") or
-            std.mem.startsWith(u8, upper, "ROLLBACK"))
-        {
-            return Result(T){ .success = try self.processSimpleCommand() };
-        } else if (std.mem.startsWith(u8, upper, "EXPLAIN")) {
-            return Result(T){ .explain = try self.processExplainResponses() };
-        } else if (std.mem.startsWith(u8, upper, "EXECUTE")) {
-            const stmt_name = try self.parseExecuteStatementName(sql);
-            std.debug.print("Executing {s}\n", .{stmt_name});
-            if (self.conn.statement_cache.get(stmt_name)) |action| {
-                switch (action) {
+                break :blk switch (action) {
                     .Select => {
                         const type_info = @typeInfo(T);
                         if (type_info != .@"struct") {
                             @compileError("EXECUTE for SELECT requires T to be a struct");
                         }
-                        const rows = (try self.processSelectResponses(T)) orelse &[_]T{};
-                        return Result(T){ .select = rows };
+                        return Result(T){
+                            .select = (try self.processSelectResponses(T)) orelse &[_]T{},
+                        };
                     },
-                    .Insert, .Update, .Delete => {
-                        return Result(T){ .command = try self.processCommandResponses() };
+                    .Insert, .Update, .Delete => Result(T){
+                        .command = try self.processCommandResponses(),
                     },
-                    .Other => {
-                        return Result(T){ .success = try self.processSimpleCommand() };
-                    },
-                }
-            } else {
-                return error.UnknownPreparedStatement;
-            }
-        } else {
-            return error.UnsupportedOperation;
-        }
+                    else => error.UnsupportedOperation,
+                };
+            },
+            .Unknown => error.UnsupportedOperation,
+        };
     }
 
     fn sendBindMessage(self: *Query, name: []const u8, params: ?[]const Param) !void {
@@ -572,16 +560,13 @@ pub const Query = struct {
     }
 
     // Parse the action type from PREPARE
-    fn parsePrepareStatementAction(_: *Query, sql: []const u8) !Action {
+    fn parsePrepareStatementAction(_: *Query, sql: []const u8) !CommandType {
         const trimmed = std.mem.trim(u8, sql, " \t\n");
         const as_idx = std.mem.indexOf(u8, trimmed, " AS ") orelse return error.InvalidPrepareSyntax;
         const stmt_sql = std.mem.trimLeft(u8, trimmed[as_idx + 4 ..], " ");
         const upper = stmt_sql[0..@min(stmt_sql.len, 10)];
-        if (std.mem.startsWith(u8, upper, "SELECT") or std.mem.startsWith(u8, upper, "WITH")) return .Select;
-        if (std.mem.startsWith(u8, upper, "INSERT")) return .Insert;
-        if (std.mem.startsWith(u8, upper, "UPDATE")) return .Update;
-        if (std.mem.startsWith(u8, upper, "DELETE")) return .Delete;
-        return .Other;
+
+        return getCommandType(upper);
     }
 
     // Parse the statement name from EXECUTE
@@ -831,5 +816,25 @@ pub const Query = struct {
             },
             else => @compileError("Unsupported field type: " ++ @typeName(FieldType)),
         };
+    }
+
+    fn getCommandType(command: []const u8) CommandType {
+        return if (std.mem.startsWith(u8, command, "SELECT")) .Select //SELECT
+        else if (std.mem.startsWith(u8, command, "WITH")) .Select //WITH
+        else if (std.mem.startsWith(u8, command, "INSERT")) .Insert //INSERT
+        else if (std.mem.startsWith(u8, command, "UPDATE")) .Update //UPDATE
+        else if (std.mem.startsWith(u8, command, "DELETE")) .Delete //DELETE
+        else if (std.mem.startsWith(u8, command, "MERGE")) .Merge //MERGE
+        else if (std.mem.startsWith(u8, command, "PREPARE")) .Prepare //PREPARE
+        else if (std.mem.startsWith(u8, command, "CREATE")) .Create //CREATE
+        else if (std.mem.startsWith(u8, command, "ALTER")) .Alter //ALTER
+        else if (std.mem.startsWith(u8, command, "DROP")) .Drop //DROP
+        else if (std.mem.startsWith(u8, command, "GRANT")) .Grant //GRANT
+        else if (std.mem.startsWith(u8, command, "REVOKE")) .Revoke //REVOKE
+        else if (std.mem.startsWith(u8, command, "COMMIT")) .Commit //COMMIT
+        else if (std.mem.startsWith(u8, command, "ROLLBACK")) .Rollback //ROLLBACK
+        else if (std.mem.startsWith(u8, command, "EXPLAIN")) .Explain //EXPLAIN
+        else if (std.mem.startsWith(u8, command, "EXECUTE")) .Execute //EXECUTE
+        else .Unknown;
     }
 };

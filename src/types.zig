@@ -160,12 +160,23 @@ pub const ConnectionState = enum {
     Error,
 };
 
-pub const Action = enum {
+pub const CommandType = enum {
     Select,
     Insert,
     Update,
     Delete,
-    Other,
+    Merge,
+    Prepare,
+    Create,
+    Alter,
+    Drop,
+    Grant,
+    Revoke,
+    Commit,
+    Rollback,
+    Explain,
+    Execute,
+    Unknown,
 };
 
 // Metadata to associate a statement with a struct type
