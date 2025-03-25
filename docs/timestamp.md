@@ -76,6 +76,10 @@ pub fn main() !void {
     };
 
     std.debug.print("Created at: {}s {}ns\n", .{user.created_at.seconds, user.created_at.nano_seconds});
+
+    // alternative way of preparing timestamp value, converting formated datetime into timestamp.
+    const ts = try Timestamp.parse("%Y-%m-%d %H:%M:%S", "2025-03-25 14:30:00");
+    std.debug.print("Parsed: {}s, {}ns\n", .{ts.seconds, ts.nano_seconds});
 }
 ```
 
