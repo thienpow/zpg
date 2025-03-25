@@ -30,6 +30,10 @@ pub const Query = struct {
         _ = self;
     }
 
+    /// Prepares a SQL statement for execution. If the statement is already cached with the same action,
+    /// it skips preparation and returns true. Otherwise, it prepares the statement, caches it, and
+    /// returns the result of the preparation process. If the statement name is missing from the SQL,
+    /// it returns an error.
     pub fn prepare(self: *Query, sql: []const u8) !bool {
         var full_sql = sql;
         var allocated_full_sql = false;
@@ -42,10 +46,18 @@ pub const Query = struct {
 
         const stmt_name = owned: {
             if (std.mem.startsWith(u8, trimmed_sql, "PREPARE ")) {
-                break :owned try self.parsePrepareStatementName(sql);
+                const name = try self.parsePrepareStatementName(sql);
+                if (name.len == 0) {
+                    return error.MissingStatementName; // Error if name not found
+                }
+                break :owned name;
             } else {
                 temp_sql = try std.fmt.allocPrint(self.allocator, "PREPARE {s}", .{sql});
-                break :owned try self.allocator.dupe(u8, try self.parsePrepareStatementName(temp_sql.?));
+                const name = try self.parsePrepareStatementName(temp_sql.?);
+                if (name.len == 0) {
+                    return error.MissingStatementName; // Error if name not found
+                }
+                break :owned try self.allocator.dupe(u8, name);
             }
         };
         defer self.allocator.free(stmt_name);
@@ -78,11 +90,18 @@ pub const Query = struct {
 
         const owned_name = try self.allocator.dupe(u8, stmt_name);
         const action = try self.parsePrepareStatementAction(full_sql);
+
+        // Only cache if processing succeeds
+        const result = try self.processSimpleCommand();
         try self.conn.statement_cache.put(owned_name, action);
 
-        return try self.processSimpleCommand();
+        return result;
     }
 
+    /// Executes a prepared statement with the given name and parameters. If parameters are provided,
+    /// it uses the simple query protocol with an EXECUTE statement. If parameters are null, it uses
+    /// the extended query protocol. The function returns the result of the execution based on the
+    /// type of the prepared statement (SELECT, INSERT, UPDATE, DELETE, or other).
     pub fn execute(self: *Query, name: []const u8, params: ?[]const Param, comptime T: type) !Result(T) {
         // Fast path: Use simple query protocol with EXECUTE statement
         if (params) |p| {
@@ -132,6 +151,11 @@ pub const Query = struct {
         }
     }
 
+    /// Runs a SQL query and returns the result based on the type of the query. It supports SELECT,
+    /// INSERT, UPDATE, DELETE, MERGE, PREPARE, CREATE, ALTER, DROP, GRANT, REVOKE, COMMIT, ROLLBACK,
+    /// EXPLAIN, and EXECUTE statements. For PREPARE statements, it caches the prepared statement.
+    /// For EXECUTE statements, it executes the prepared statement and returns the result based on
+    /// the statement's action.
     pub fn run(self: *Query, sql: []const u8, comptime T: type) !Result(T) {
         try self.conn.sendMessage(@intFromEnum(RequestType.Query), sql, true);
 
@@ -149,12 +173,17 @@ pub const Query = struct {
         {
             return Result(T){ .command = try self.processCommandResponses() };
         } else if (std.mem.startsWith(u8, upper, "PREPARE")) {
+            const result = try self.processSimpleCommand();
+
             const stmt_name = try self.parsePrepareStatementName(sql);
             const action = try self.parsePrepareStatementAction(sql);
             const owned_name = try self.allocator.dupe(u8, stmt_name);
+
             try self.conn.statement_cache.put(owned_name, action);
 
-            return Result(T){ .success = try self.processSimpleCommand() };
+            return Result(T){
+                .success = result,
+            };
         } else if (std.mem.startsWith(u8, upper, "CREATE") or
             std.mem.startsWith(u8, upper, "ALTER") or
             std.mem.startsWith(u8, upper, "DROP") or
