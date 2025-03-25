@@ -3,6 +3,10 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta
+            name="description"
+            content="ZPG - Simple, fast PostgreSQL integration for Zig"
+        />
         <title>ZPG - Simple, Fast, and Reliable PostgreSQL in Zig</title>
         <style>
             body {
@@ -96,7 +100,7 @@
                     powerful connection pool. ZPG handles the heavy lifting so
                     you can focus on building.
                 </p>
-                <pre><code>
+                <pre><code class="language-zig">
 var pool = try ConnectionPool.init(allocator, config, 3);
 defer pool.deinit();
 var pooled_conn = try PooledConnection.init(&pool);
@@ -115,7 +119,7 @@ defer pooled_conn.deinit();
                     Write secure, reusable SQL queries with ease. ZPG’s prepared
                     statements are intuitive and cached for performance.
                 </p>
-                <pre><code>
+                <pre><code class="language-zig">
 const prepared_user_one = try query.prepare(
     "user_one (int8) AS SELECT id, username FROM users WHERE id = $1"
 );
@@ -134,7 +138,7 @@ const prepared_user_one = try query.prepare(
                     reliability. Create queries directly from your pooled
                     connection and execute them with ease.
                 </p>
-                <pre><code>
+                <pre><code class="language-zig">
 var query = pooled_conn.createQuery(allocator);
 defer query.deinit();
 
@@ -142,12 +146,12 @@ const select_result = try query.execute("user_one", params, User);
 const update_result = try query.execute("user_update", params_for_user_update, zpg.types.Empty);
                 </code></pre>
                 <p>
-                    Use <code>createQuery</code> to instantiate a query object
-                    from your pooled connection, then execute prepared
-                    statements with minimal overhead. The
-                    <code>defer query.deinit()</code> ensures resources are
-                    cleaned up automatically. Benchmarked results show the
-                    performance you can count on.
+                    Use <code class="language-zig">createQuery</code> to
+                    instantiate a query object from your pooled connection, then
+                    execute prepared statements with minimal overhead. The
+                    <code class="language-zig">defer query.deinit()</code>
+                    ensures resources are cleaned up automatically. Benchmarked
+                    results show the performance you can count on.
                 </p>
             </div>
 
@@ -157,7 +161,7 @@ const update_result = try query.execute("user_update", params_for_user_update, z
                     Map your database rows to Zig structs effortlessly. ZPG
                     handles memory management so you don’t have to.
                 </p>
-                <pre><code>
+                <pre><code class="language-zig">
 const User = struct {
     id: i64,
     username: []const u8,
