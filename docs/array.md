@@ -2,11 +2,11 @@ The `parseArrayElements` function you provided is written in Zig, a systems prog
 
 ### When to Use `parseArrayElements`
 1. **Parsing Textual Array Representations**:
-   - Use this when you need to interpret a string or byte slice (e.g., `"{1, 2, 3}"` or `"{\"a\", \"b\", \"c\"}"`) into a typed array or list in memory.
+   - Use this when you need to interpret a string or byte slice (e.g., ```"{1, 2, 3}"``` or ```"{\"a\", \"b\", \"c\"}"```) into a typed array or list in memory.
    - Example: Parsing a database query result, a serialized message, or a config file where arrays are represented as comma-separated values enclosed in braces.
 
 2. **Nested Array Handling**:
-   - The function supports nested arrays (e.g., `"{1, {2, 3}, 4}"`) when `ElementType` is an array or pointer (slice). This makes it useful for hierarchical data structures.
+   - The function supports nested arrays (e.g., ```"{1, {2, 3}, 4}"```) when `ElementType` is an array or pointer (slice). This makes it useful for hierarchical data structures.
 
 3. **Custom Serialization/Deserialization**:
    - If you’re building a parser for a custom format where arrays are represented with braces `{}` and commas `,` as separators, this function can handle the heavy lifting.
@@ -19,8 +19,13 @@ The `parseArrayElements` function you provided is written in Zig, a systems prog
    - It uses Zig’s `std.mem.Allocator` for explicit memory management, which is ideal in performance-critical applications where you need control over allocations (e.g., embedded systems, game engines, or servers).
 
 ### Specific Scenarios
-- **Configuration Parsing**: Imagine a config file with a line like `values = {1, 2, 3}` or `nested = {{1, 2}, {3, 4}}`. This function can parse it into an `ArrayList` of integers or nested arrays.
-- **Protocol Implementation**: If you’re implementing a protocol where messages include arrays (e.g., `"{id: 1, data: {10, 20}}"`), this can extract the array elements.
+- **Configuration Parsing**: Imagine a config file with a line like
+```
+values = {1, 2, 3};
+nested = {{1, 2}, {3, 4}};
+```
+This function can parse it into an `ArrayList` of integers or nested arrays.
+- **Protocol Implementation**: If you’re implementing a protocol where messages include arrays (e.g., ```"{id: 1, data: {10, 20}}"```), this can extract the array elements.
 - **Data Import**: Converting a textual data dump (e.g., CSV-like or custom format) into a structured in-memory representation.
 
 ### How It Works
