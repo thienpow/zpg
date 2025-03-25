@@ -107,7 +107,7 @@ CREATE TABLE matrix (
 
 INSERT INTO matrix (grid)
 VALUES
-    ('{{1, 2}, {3, 4}}');  -- 2x2 array
+    ('\{{1, 2}, {3, 4}\}');  -- 2x2 array
 
 SELECT grid[1][2] AS element  -- Accesses the value 2
 FROM matrix;
