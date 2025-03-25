@@ -241,3 +241,23 @@ pub const TypeOids = struct {
     pub const UUID: Oid = 2950;
     // ... other OIDs ...
 };
+
+pub fn getCommandType(command: []const u8) CommandType {
+    return if (std.mem.startsWith(u8, command, "SELECT")) .Select //SELECT
+    else if (std.mem.startsWith(u8, command, "WITH")) .Select //WITH
+    else if (std.mem.startsWith(u8, command, "INSERT")) .Insert //INSERT
+    else if (std.mem.startsWith(u8, command, "UPDATE")) .Update //UPDATE
+    else if (std.mem.startsWith(u8, command, "DELETE")) .Delete //DELETE
+    else if (std.mem.startsWith(u8, command, "MERGE")) .Merge //MERGE
+    else if (std.mem.startsWith(u8, command, "PREPARE")) .Prepare //PREPARE
+    else if (std.mem.startsWith(u8, command, "CREATE")) .Create //CREATE
+    else if (std.mem.startsWith(u8, command, "ALTER")) .Alter //ALTER
+    else if (std.mem.startsWith(u8, command, "DROP")) .Drop //DROP
+    else if (std.mem.startsWith(u8, command, "GRANT")) .Grant //GRANT
+    else if (std.mem.startsWith(u8, command, "REVOKE")) .Revoke //REVOKE
+    else if (std.mem.startsWith(u8, command, "COMMIT")) .Commit //COMMIT
+    else if (std.mem.startsWith(u8, command, "ROLLBACK")) .Rollback //ROLLBACK
+    else if (std.mem.startsWith(u8, command, "EXPLAIN")) .Explain //EXPLAIN
+    else if (std.mem.startsWith(u8, command, "EXECUTE")) .Execute //EXECUTE
+    else .Unknown;
+}
