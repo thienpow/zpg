@@ -80,6 +80,10 @@ pub fn main() !void {
     // alternative way of preparing timestamp value, converting formated datetime into timestamp.
     const ts = try Timestamp.parse("%Y-%m-%d %H:%M:%S", "2025-03-25 14:30:00");
     std.debug.print("Parsed: {}s, {}ns\n", .{ts.seconds, ts.nano_seconds});
+
+    const formatted = try ts.format("%Y/%m/%d %H:%M:%S", allocator);
+    defer allocator.free(formatted);
+    std.debug.print("Formatted: {s}\n", .{formatted});
 }
 ```
 
