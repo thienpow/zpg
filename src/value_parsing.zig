@@ -9,7 +9,7 @@ pub fn readString(allocator: std.mem.Allocator, reader: anytype) ![]const u8 {
     return str;
 }
 
-fn parseArrayElements(
+pub fn parseArrayElements(
     allocator: std.mem.Allocator,
     bytes: []u8,
     pos: *usize, // Pointer to usize, mutable

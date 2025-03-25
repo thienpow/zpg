@@ -11,6 +11,17 @@ zig build test --summary all
 
 This will execute all tests, including those for connection pooling (see `tests/pool.zig` for an example), and provide a summary of the results.
 
+## Detailed Type Documentation
+
+Learn how ZPG handles PostgreSQL’s advanced data types with our comprehensive guides. Each document provides in-depth explanations and examples for integrating these types into your Zig structs.
+
+- [Decimal](https://github.com/thienpow/zpg/blob/main/docs/decimal.md) - Handle precise numeric values like account balances with ZPG’s decimal support.
+- [Enum](https://github.com/thienpow/zpg/blob/main/docs/enum.md) - Map PostgreSQL ENUM types to Zig enums for type-safe status fields.
+- [Interval](https://github.com/thienpow/zpg/blob/main/docs/interval.md) - Work with time durations like subscription periods using ZPG’s interval handling.
+- [Timestamp](https://github.com/thienpow/zpg/blob/main/docs/timestamp.md) - Manage date and time fields with precision, including timezone support.
+- [UUID](https://github.com/thienpow/zpg/blob/main/docs/uuid.md) - Utilize PostgreSQL UUIDs for unique identifiers in your Zig application.
+- [Array](https://github.com/thienpow/zpg/blob/main/docs/array.md) - Utilize PostgreSQL Array for unique identifiers in your Zig application.
+
 ### Planned Features
 For a full-fledged PostgreSQL driver, `zpg` could be extended to include:
 
