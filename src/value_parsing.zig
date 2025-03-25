@@ -35,7 +35,7 @@ fn parseArrayElements(
 
         // Handle NULL
         if (*pos + 4 <= end and std.mem.eql(u8, bytes[*pos .. *pos + 4], "NULL")) {
-            try elements.append(fillDefaultValue(ElementType, @as(ElementType, 0), allocator));
+            try elements.append(fillDefaultValue(ElementType, @as(ElementType, 0)));
             (*pos) += 4; // Skip "NULL"
             continue;
         }
@@ -83,7 +83,7 @@ fn parseArrayElements(
 
         const element_str = bytes[start..element_end];
         var element_fbs = std.io.fixedBufferStream(element_str);
-        const value = try readValueForType(element_fbs.reader().any(), ElementType, allocator);
+        const value = try readValueForType(allocator, element_fbs.reader().any(), ElementType);
         try elements.append(value);
     }
     return *pos;

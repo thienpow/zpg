@@ -72,12 +72,12 @@ pub const Query = struct {
         if (self.conn.statement_cache.get(stmt_name)) |cached_action| {
             const current_action = blk: {
                 if (std.mem.startsWith(u8, trimmed_sql, "PREPARE ")) {
-                    break :blk try parsing.parsePrepareStatementAction(sql);
+                    break :blk try parsing.parsePrepareStatementCommand(sql);
                 } else {
                     if (temp_sql == null) {
                         temp_sql = try std.fmt.allocPrint(self.allocator, "PREPARE {s}", .{sql});
                     }
-                    break :blk try parsing.parsePrepareStatementAction(temp_sql.?);
+                    break :blk try parsing.parsePrepareStatementCommand(temp_sql.?);
                 }
             };
 
@@ -95,7 +95,7 @@ pub const Query = struct {
         try self.conn.sendMessage(@intFromEnum(RequestType.Query), full_sql, true);
 
         const owned_name = try self.allocator.dupe(u8, stmt_name);
-        const action = try parsing.parsePrepareStatementAction(full_sql);
+        const action = try parsing.parsePrepareStatementCommand(full_sql);
 
         // Only cache if processing succeeds
         const result = try self.protocol.processSimpleCommand();
@@ -181,7 +181,7 @@ pub const Query = struct {
             .Prepare => blk: {
                 const result = try protocol.processSimpleCommand();
                 const stmt_name = try parsing.parsePrepareStatementName(sql);
-                const action = try parsing.parsePrepareStatementAction(sql);
+                const action = try parsing.parsePrepareStatementCommand(sql);
                 const owned_name = try self.allocator.dupe(u8, stmt_name);
                 try self.conn.statement_cache.put(owned_name, action);
                 break :blk Result(T){ .success = result };

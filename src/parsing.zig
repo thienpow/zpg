@@ -11,8 +11,8 @@ pub fn parsePrepareStatementName(sql: []const u8) ![]const u8 {
     return after_prepare[0..name_end];
 }
 
-// Parse the action type from PREPARE
-pub fn parsePrepareStatementAction(sql: []const u8) !CommandType {
+// Parse the command type from PREPARE
+pub fn parsePrepareStatementCommand(sql: []const u8) !CommandType {
     const trimmed = std.mem.trim(u8, sql, " \t\n");
     const as_idx = std.mem.indexOf(u8, trimmed, " AS ") orelse return error.InvalidPrepareSyntax;
     const stmt_sql = std.mem.trimLeft(u8, trimmed[as_idx + 4 ..], " ");
