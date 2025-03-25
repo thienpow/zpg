@@ -21,8 +21,8 @@ The `parseArrayElements` function you provided is written in Zig, a systems prog
 ### Specific Scenarios
 - **Configuration Parsing**: Imagine a config file with a line like
 ```
-values = {1, 2, 3};
-nested = {{1, 2}, {3, 4}};
+values = {1, 2, 3}
+nested = \{ {1, 2}, {3, 4} \}
 ```
 This function can parse it into an `ArrayList` of integers or nested arrays.
 - **Protocol Implementation**: If you’re implementing a protocol where messages include arrays (e.g., ```"{id: 1, data: {10, 20}}"```), this can extract the array elements.
