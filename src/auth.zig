@@ -23,7 +23,7 @@ pub const Auth = struct {
         var sasl = SASL.init(self.allocator, self.conn);
         defer sasl.deinit();
 
-        var buffer: [1024]u8 = undefined;
+        var buffer: [64]u8 = undefined;
         const msg_len = try self.conn.readMessage(&buffer);
         var fbs = std.io.fixedBufferStream(buffer[0..msg_len]);
         var reader = fbs.reader();

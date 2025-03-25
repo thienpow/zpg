@@ -68,26 +68,51 @@ const ParamValue = union(enum) {
     Bool: bool,
 
     pub fn writeTo(self: ParamValue, writer: anytype, format: u16) !void {
-        _ = format;
         switch (self) {
-            .Null => {
-                try writer.writeInt(i32, -1, .big); // -1 indicates NULL
-            },
+            .Null => try writer.writeInt(i32, -1, .big),
             .String => |value| {
                 try writer.writeInt(i32, @intCast(value.len), .big);
                 try writer.writeAll(value);
             },
             .Int => |data| {
-                try writer.writeInt(i32, @intCast(data.size), .big);
-                try writer.writeAll(data.bytes[0..data.size]);
+                if (format == 0) {
+                    var buf: [20]u8 = undefined;
+                    const num = std.mem.readInt(i64, &data.bytes, .big);
+                    const text = try std.fmt.bufPrint(&buf, "{}", .{num});
+                    try writer.writeInt(i32, @intCast(text.len), .big);
+                    try writer.writeAll(text);
+                } else {
+                    try writer.writeInt(i32, @intCast(data.size), .big);
+                    try writer.writeAll(data.bytes[0..data.size]);
+                }
             },
             .Float => |data| {
-                try writer.writeInt(i32, @intCast(data.size), .big);
-                try writer.writeAll(data.bytes[0..data.size]);
+                if (format == 0) { // Text
+                    var buf: [20]u8 = undefined;
+                    const text = if (data.size == 4) blk: {
+                        const bits = std.mem.readInt(u32, data.bytes[0..4], .big);
+                        const num: f32 = @bitCast(bits);
+                        break :blk try std.fmt.bufPrint(&buf, "{d}", .{num});
+                    } else blk: {
+                        const bits = std.mem.readInt(u64, &data.bytes, .big);
+                        const num: f64 = @bitCast(bits);
+                        break :blk try std.fmt.bufPrint(&buf, "{d}", .{num});
+                    };
+                    try writer.writeInt(i32, @intCast(text.len), .big);
+                    try writer.writeAll(text);
+                } else { // Binary
+                    try writer.writeInt(i32, @intCast(data.size), .big);
+                    try writer.writeAll(data.bytes[0..data.size]);
+                }
             },
             .Bool => |value| {
-                try writer.writeInt(i32, 1, .big); // 1 byte
-                try writer.writeByte(if (value) 1 else 0);
+                if (format == 0) {
+                    try writer.writeInt(i32, 1, .big);
+                    try writer.writeAll(if (value) "t" else "f");
+                } else {
+                    try writer.writeInt(i32, 1, .big);
+                    try writer.writeByte(if (value) 1 else 0);
+                }
             },
         }
     }

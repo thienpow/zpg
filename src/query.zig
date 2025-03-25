@@ -106,9 +106,8 @@ pub const Query = struct {
         } else {
             // Slow path: Use extended query protocol for NULL params
             try self.sendBindMessage(name, params);
-
-            try self.conn.sendMessage(@intFromEnum(RequestType.Execute), &[_]u8{0}, false); // Execute message (empty portal)
-            try self.conn.sendMessage(@intFromEnum(RequestType.Sync), &[_]u8{}, false); // Sync message
+            try self.conn.sendMessage(@intFromEnum(RequestType.Execute), &[_]u8{ 0, 0, 0, 0, 0 }, false);
+            try self.conn.sendMessage(@intFromEnum(RequestType.Sync), "", false);
 
             if (self.conn.statement_cache.get(name)) |action| {
                 switch (action) {
@@ -135,6 +134,7 @@ pub const Query = struct {
 
     pub fn run(self: *Query, sql: []const u8, comptime T: type) !Result(T) {
         try self.conn.sendMessage(@intFromEnum(RequestType.Query), sql, true);
+
         const trimmed = std.mem.trim(u8, sql, " \t\n");
         const upper = trimmed[0..@min(trimmed.len, 10)];
 
@@ -209,7 +209,7 @@ pub const Query = struct {
         try writer.writeInt(u16, @intCast(param_count), .big);
         if (params) |p| {
             for (p) |param| {
-                try writer.writeInt(u16, param.format, .big); // Use param.format directly
+                try writer.writeInt(u16, param.format, .big);
             }
         }
 
@@ -217,7 +217,7 @@ pub const Query = struct {
         try writer.writeInt(u16, @intCast(param_count), .big);
         if (params) |p| {
             for (p) |param| {
-                try writeParameterValue(writer, param);
+                try param.writeTo(writer); // Use Param’s method
             }
         }
 
@@ -225,33 +225,6 @@ pub const Query = struct {
         try writer.writeInt(u16, 0, .big);
 
         try self.conn.sendMessage(@intFromEnum(RequestType.Bind), buffer.items, false);
-    }
-
-    fn writeParameterValue(writer: anytype, param: Param) !void {
-        if (param.value == .Null) {
-            try writer.writeInt(i32, -1, .big); // NULL
-            return;
-        }
-
-        switch (param.value) {
-            .Null => unreachable, // Handled above
-            .String => |value| {
-                try writer.writeInt(i32, @intCast(value.len), .big);
-                try writer.writeAll(value);
-            },
-            .Int => |data| {
-                try writer.writeInt(i32, @intCast(data.size), .big);
-                try writer.writeAll(data.bytes[0..data.size]);
-            },
-            .Float => |data| {
-                try writer.writeInt(i32, @intCast(data.size), .big);
-                try writer.writeAll(data.bytes[0..data.size]);
-            },
-            .Bool => |value| {
-                try writer.writeInt(i32, 1, .big);
-                try writer.writeByte(if (value) 1 else 0);
-            },
-        }
     }
 
     fn formatParamAsText(buffer: *std.ArrayList(u8), param: Param) !void {
@@ -575,17 +548,11 @@ pub const Query = struct {
         const as_idx = std.mem.indexOf(u8, trimmed, " AS ") orelse return error.InvalidPrepareSyntax;
         const stmt_sql = std.mem.trimLeft(u8, trimmed[as_idx + 4 ..], " ");
         const upper = stmt_sql[0..@min(stmt_sql.len, 10)];
-        if (std.mem.startsWith(u8, upper, "SELECT") or std.mem.startsWith(u8, upper, "WITH")) {
-            return .Select;
-        } else if (std.mem.startsWith(u8, upper, "INSERT")) {
-            return .Insert;
-        } else if (std.mem.startsWith(u8, upper, "UPDATE")) {
-            return .Update;
-        } else if (std.mem.startsWith(u8, upper, "DELETE")) {
-            return .Delete;
-        } else {
-            return .Other;
-        }
+        if (std.mem.startsWith(u8, upper, "SELECT") or std.mem.startsWith(u8, upper, "WITH")) return .Select;
+        if (std.mem.startsWith(u8, upper, "INSERT")) return .Insert;
+        if (std.mem.startsWith(u8, upper, "UPDATE")) return .Update;
+        if (std.mem.startsWith(u8, upper, "DELETE")) return .Delete;
+        return .Other;
     }
 
     // Parse the statement name from EXECUTE

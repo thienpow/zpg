@@ -54,7 +54,6 @@ const std = @import("std");
 const zpg = @import("zpg");
 const Uuid = zpg.field.Uuid;
 
-
 pub const UserStatus = enum {
     active,
     inactive,
