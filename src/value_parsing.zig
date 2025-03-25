@@ -273,7 +273,7 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
                 if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
 
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidInterval;
-            } else if (@hasDecl(FieldType, "fromPostgresText")) {
+            } else if (@hasDecl(FieldType, "fromPostgresText")) { // currently we have Decimal,Date,Time can fall into this condition
                 // Support for custom types that know how to parse themselves
                 const len = try reader.readInt(i32, .big);
                 if (len < 0) return FieldType{}; // NULL value, return empty struct

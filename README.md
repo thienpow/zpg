@@ -21,6 +21,7 @@ Learn how ZPG handles PostgreSQL’s advanced data types with our comprehensive 
 - [Timestamp](https://github.com/thienpow/zpg/blob/main/docs/timestamp.md) - Manage date and time fields with precision, including timezone support.
 - [UUID](https://github.com/thienpow/zpg/blob/main/docs/uuid.md) - Utilize PostgreSQL UUIDs for unique identifiers in your Zig application.
 - [Array](https://github.com/thienpow/zpg/blob/main/docs/array.md) - Leverage PostgreSQL arrays to manage collections of data, such as lists or sets, in your Zig application.
+- [more...](https://github.com/thienpow/zpg/blob/main/src/field/) - composite, geometric, money, net, search...
 
 ### Planned Features
 For a full-fledged PostgreSQL driver, `zpg` could be extended to include:
