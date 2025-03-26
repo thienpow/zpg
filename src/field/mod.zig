@@ -39,3 +39,6 @@ pub const JSON = json.JSON;
 pub const JSONB = json.JSONB;
 
 pub const Composite = @import("composite.zig").Composite;
+pub const string = @import("string.zig");
+pub const VARCHAR = string.VARCHAR;
+pub const CHAR = string.CHAR;
