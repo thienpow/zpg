@@ -15,7 +15,7 @@ const config = zpg.Config{
 
 // Modified struct with optional fields for decimal and money
 const NumericTest = struct {
-    id: i32,
+    id: zpg.field.Serial,
     smallint_col: i16,
     integer_col: i32,
     bigint_col: i64,
@@ -35,7 +35,6 @@ const NumericTest = struct {
 };
 
 const insert_params = &[_]Param{
-    Param.int(@as(i32, 1)),
     Param.int(@as(i16, 123)),
     Param.int(@as(i32, 45678)),
     Param.int(@as(i64, 123456789)),
@@ -46,7 +45,7 @@ const insert_params = &[_]Param{
 };
 
 const select_params = &[_]Param{
-    Param.int(@as(i32, 1)),
+    Param.int(@as(u32, 1)),
 };
 
 test "numeric types test" {
@@ -65,7 +64,7 @@ test "numeric types test" {
     _ = try query.run("DROP TABLE IF EXISTS numeric_test", zpg.types.Empty);
 
     _ = try query.run("CREATE TABLE numeric_test (" ++
-        "id INTEGER PRIMARY KEY, " ++
+        "id SERIAL PRIMARY KEY, " ++
         "smallint_col SMALLINT, " ++
         "integer_col INTEGER, " ++
         "bigint_col BIGINT, " ++
@@ -75,9 +74,9 @@ test "numeric types test" {
         "money_col MONEY)", zpg.types.Empty);
 
     // Insert test data
-    _ = try query.prepare("insert_data AS INSERT INTO numeric_test (id, smallint_col, integer_col, bigint_col, " ++
+    _ = try query.prepare("insert_data AS INSERT INTO numeric_test (smallint_col, integer_col, bigint_col, " ++
         "decimal_col, real_col, double_col, money_col) " ++
-        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)");
+        "VALUES ($1, $2, $3, $4, $5, $6, $7)");
     _ = try query.execute("insert_data", insert_params, zpg.types.Empty);
 
     // Select and verify
@@ -92,7 +91,8 @@ test "numeric types test" {
             defer allocator.free(rows);
             for (rows) |item| {
                 // Verify each field
-                try std.testing.expectEqual(@as(i32, 1), item.id);
+                try std.testing.expectEqual(@as(u32, 1), item.id.value);
+
                 try std.testing.expectEqual(@as(i16, 123), item.smallint_col);
                 try std.testing.expectEqual(@as(i32, 45678), item.integer_col);
                 try std.testing.expectEqual(@as(i64, 123456789), item.bigint_col);

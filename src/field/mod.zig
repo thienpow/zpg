@@ -1,3 +1,8 @@
+pub const serial = @import("serial.zig");
+pub const Serial = serial.Serial;
+pub const SmallSerial = serial.SmallSerial;
+pub const BigSerial = serial.BigSerial;
+
 pub const Decimal = @import("decimal.zig").Decimal;
 pub const Money = @import("money.zig").Money;
 pub const Interval = @import("interval.zig").Interval;

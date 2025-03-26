@@ -224,6 +224,10 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
             return std.meta.stringToEnum(FieldType, bytes[0..read]) orelse error.InvalidEnum;
         },
         .optional => |opt_info| {
+            if (@hasDecl(opt_info.child, "isSerial") and opt_info.child.isSerial) {
+                @compileError("SERIAL types (SmallSerial, Serial, BigSerial) cannot be optional");
+            }
+
             const len = try reader.readInt(i32, .big);
             if (len < 0) return null;
             const len_u64 = @as(u64, @intCast(len));
@@ -281,7 +285,7 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
             if (len < 0) {
                 if (FieldType == Decimal) return FieldType{ .value = 0, .scale = 0 };
                 if (FieldType == Money) return FieldType{ .value = 0 };
-                if (@hasDecl(FieldType, "isUuid") and FieldType.isUuid) return FieldType{};
+                if (@hasDecl(FieldType, "isSerial") and FieldType.isSerial) return error.SerialCannotBeNull; // Reject NULL                if (@hasDecl(FieldType, "isUuid") and FieldType.isUuid) return FieldType{};
                 if (@hasDecl(FieldType, "isTimestamp") and FieldType.isTimestamp) return FieldType{};
                 if (@hasDecl(FieldType, "isInterval") and FieldType.isInterval) return FieldType{};
                 if (@hasDecl(FieldType, "fromPostgresText")) return FieldType{};
@@ -313,6 +317,9 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
             }
             if (FieldType == Money) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidCustomType;
+            }
+            if (@hasDecl(FieldType, "isSerial") and FieldType.isSerial) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidSerial;
             }
             if (@hasDecl(FieldType, "isUuid") and FieldType.isUuid) {
                 return FieldType.fromString(bytes[0..read]) catch return error.InvalidUuid;

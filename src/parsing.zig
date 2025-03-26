@@ -18,7 +18,16 @@ pub fn parsePrepareStatementCommand(sql: []const u8) !CommandType {
     const stmt_sql = std.mem.trimLeft(u8, trimmed[as_idx + 4 ..], " ");
     const upper = stmt_sql[0..@min(stmt_sql.len, 10)];
 
-    return types.getCommandType(upper);
+    const command_type = types.getCommandType(upper);
+
+    // Check if the command type is allowed in PREPARE
+    switch (command_type) {
+        .Select, .Insert, .Update, .Delete => return command_type, // Allowed commands
+        else => {
+            std.debug.print("\x1b[31mError\x1b[0m: Unsupported command '{s}' in PREPARE statement. Only SELECT, INSERT, UPDATE, and DELETE are allowed.\n", .{@tagName(command_type)});
+            return error.UnsupportedPrepareCommand;
+        }, // Reject everything else
+    }
 }
 
 // Parse the statement name from EXECUTE

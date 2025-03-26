@@ -92,10 +92,14 @@ pub const Query = struct {
             allocated_full_sql = true;
         }
 
+        // Validate the command *before* allocating owned_name
+        const action = try parsing.parsePrepareStatementCommand(full_sql);
+
         try self.conn.sendMessage(@intFromEnum(RequestType.Query), full_sql, true);
 
+        // Allocate owned_name only after validation succeeds
         const owned_name = try self.allocator.dupe(u8, stmt_name);
-        const action = try parsing.parsePrepareStatementCommand(full_sql);
+        errdefer self.allocator.free(owned_name); // Free on error after this point
 
         // Only cache if processing succeeds
         const result = try self.protocol.processSimpleCommand();
