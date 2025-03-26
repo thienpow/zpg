@@ -9,6 +9,11 @@ const RequestType = types.RequestType;
 const ResponseType = types.ResponseType;
 const ExplainRow = types.ExplainRow;
 
+const Notice = types.Notice;
+const NoticeField = types.NoticeField;
+const PostgresError = types.PostgresError;
+const ErrorField = types.ErrorField;
+
 const Param = @import("param.zig").Param;
 const value_parsing = @import("value_parsing.zig");
 
@@ -122,6 +127,9 @@ pub const Protocol = struct {
         const allocator = self.allocator;
         var buffer: [4096]u8 = undefined;
         var return_value: u64 = 0;
+        var error_encountered = false;
+        var postgres_error: ?PostgresError = null;
+
         while (true) {
             const result = try self.conn.readMessageType(&buffer);
             const response_type: ResponseType = @enumFromInt(result.type);
@@ -136,17 +144,85 @@ pub const Protocol = struct {
                     // TODO: keep this empty section here for future improvement.
                 },
                 .CommandComplete => {
+                    if (error_encountered) {
+                        return 0;
+                    }
+
                     const command_tag = try reader.readUntilDelimiterAlloc(allocator, 0, 1024);
                     defer allocator.free(command_tag);
-                    std.debug.print("Command tag: {s}\n", .{command_tag});
-                    const space_idx = std.mem.indexOfScalar(u8, command_tag, ' ') orelse return error.InvalidCommandTag;
-                    const count_str = command_tag[space_idx + 1 ..];
-                    return_value = try std.fmt.parseInt(u64, count_str, 10);
+
+                    // Handle different command tag formats
+                    if (std.mem.startsWith(u8, command_tag, "INSERT")) {
+                        // For INSERT, look for the last number
+                        const last_space_idx = std.mem.lastIndexOfScalar(u8, command_tag, ' ') orelse {
+                            // If no space found, default to 0
+                            return_value = 0;
+                            continue;
+                        };
+                        const count_str = command_tag[last_space_idx + 1 ..];
+                        return_value = std.fmt.parseInt(u64, count_str, 10) catch |err| {
+                            std.debug.print("Failed to parse count from: {s}, error: {}\n", .{ count_str, err });
+                            return_value = 0;
+                            continue;
+                        };
+                    } else if (std.mem.indexOfScalar(u8, command_tag, ' ')) |space_idx| {
+                        // Generic approach for other commands with a space
+                        const count_str = command_tag[space_idx + 1 ..];
+                        return_value = std.fmt.parseInt(u64, count_str, 10) catch |err| {
+                            std.debug.print("Failed to parse count from: {s}, error: {}\n", .{ count_str, err });
+                            return_value = 0;
+                            continue;
+                        };
+                    } else {
+                        // No number found
+                        return_value = 0;
+                    }
                 },
-                .ReadyForQuery => return return_value, // Shouldn't reach here without 'C'
-                .ErrorResponse => return error.DatabaseError,
+                .ReadyForQuery => {
+                    if (postgres_error) |*pe| {
+                        pe.deinit(allocator);
+                    }
+                    // ReadyForQuery - transaction complete
+                    return return_value;
+                },
+                .ErrorResponse => {
+                    // Collect error details but continue processing
+                    error_encountered = true;
+
+                    // Free any previous error
+                    if (postgres_error) |*pe| {
+                        pe.deinit(allocator);
+                    }
+
+                    postgres_error = try processErrorResponse(self, reader, allocator);
+
+                    // Log or handle the error
+                    if (postgres_error) |err| {
+                        if (err.severity) |severity| {
+                            std.debug.print("Error Severity: {s}\n", .{severity});
+                        }
+                        if (err.message) |message| {
+                            std.debug.print("Error Message: {s}\n", .{message});
+                        }
+                    }
+
+                    // Continue processing to reach ReadyForQuery
+                    continue;
+                },
+                .NoticeResponse => {
+                    var notice = try processNoticeResponse(self, reader, allocator);
+                    defer notice.deinit(allocator);
+
+                    // Log or handle the notice
+                    if (notice.message) |message| {
+                        std.debug.print("Notice: {s}\n", .{message});
+                    }
+
+                    // Continue processing
+                    continue;
+                },
                 else => {
-                    std.debug.print("Bad thing happen, response_type: {}", .{response_type});
+                    std.debug.print("Unexpected response type: {}", .{response_type});
                     return error.ProtocolError;
                 },
             }
@@ -156,8 +232,10 @@ pub const Protocol = struct {
     pub fn processSimpleCommand(self: *Protocol) !bool {
         const allocator = self.allocator;
         var buffer: [4096]u8 = undefined;
-
         var success = false;
+        var error_encountered = false;
+        var postgres_error: ?PostgresError = null;
+
         while (true) {
             const result = try self.conn.readMessageType(&buffer);
             const response_type: ResponseType = @enumFromInt(result.type);
@@ -168,6 +246,10 @@ pub const Protocol = struct {
 
             switch (response_type) {
                 .CommandComplete => {
+                    if (error_encountered) {
+                        return false;
+                    }
+
                     // CommandComplete - just verify it’s there
                     const command_tag = try reader.readUntilDelimiterAlloc(allocator, 0, 1024);
                     defer allocator.free(command_tag);
@@ -175,19 +257,111 @@ pub const Protocol = struct {
                     success = true;
                 },
                 .ReadyForQuery => {
+                    if (postgres_error) |*pe| {
+                        pe.deinit(allocator);
+                    }
                     // ReadyForQuery - transaction complete
                     return success;
                 },
                 .ErrorResponse => {
-                    // ErrorResponse - handle database errors
-                    return error.DatabaseError;
+                    // Collect error details but continue processing
+                    error_encountered = true;
+
+                    // Free any previous error
+                    if (postgres_error) |*pe| {
+                        pe.deinit(allocator);
+                    }
+
+                    postgres_error = try processErrorResponse(self, reader, allocator);
+
+                    // Log or handle the error
+                    if (postgres_error) |err| {
+                        if (err.severity) |severity| {
+                            std.debug.print("Error Severity: {s}\n", .{severity});
+                        }
+                        if (err.message) |message| {
+                            std.debug.print("Error Message: {s}\n", .{message});
+                        }
+                    }
+
+                    // Continue processing to reach ReadyForQuery
+                    continue;
+                },
+                .NoticeResponse => {
+                    var notice = try processNoticeResponse(self, reader, allocator);
+                    defer notice.deinit(allocator);
+
+                    // Log or handle the notice
+                    if (notice.message) |message| {
+                        std.debug.print("Notice: {s}\n", .{message});
+                    }
+
+                    // Continue processing
+                    continue;
                 },
                 else => {
-                    std.debug.print("Bad thing happen, response_type: {}", .{response_type});
+                    std.debug.print("Unexpected response type: {}", .{response_type});
                     return error.ProtocolError;
                 },
             }
         }
+    }
+
+    pub fn processNoticeResponse(_: *Protocol, reader: anytype, allocator: std.mem.Allocator) !Notice {
+        var notice = Notice{};
+        errdefer notice.deinit(allocator);
+
+        while (true) {
+            const field_type = try reader.readByte();
+            if (field_type == 0) break; // End of notice fields
+
+            const field_value = try reader.readUntilDelimiterAlloc(allocator, 0, // null terminator
+                1024 // max length
+            );
+            defer allocator.free(field_value);
+
+            switch (@as(NoticeField, @enumFromInt(field_type))) {
+                .Severity => notice.severity = try allocator.dupe(u8, field_value),
+                .Message => notice.message = try allocator.dupe(u8, field_value),
+                .Detail => notice.detail = try allocator.dupe(u8, field_value),
+                .Hint => notice.hint = try allocator.dupe(u8, field_value),
+                .Code => notice.code = try allocator.dupe(u8, field_value),
+                else => {
+                    // Optionally log or ignore other fields
+                    // std.debug.print("Unhandled notice field type: {c}\n", .{field_type});
+                },
+            }
+        }
+
+        return notice;
+    }
+
+    pub fn processErrorResponse(_: *Protocol, reader: anytype, allocator: std.mem.Allocator) !PostgresError {
+        var error_info = PostgresError{};
+        errdefer error_info.deinit(allocator);
+
+        while (true) {
+            const field_type = try reader.readByte();
+            if (field_type == 0) break; // End of error fields
+
+            const field_value = try reader.readUntilDelimiterAlloc(allocator, 0, // null terminator
+                1024 // max length
+            );
+            defer allocator.free(field_value);
+
+            switch (@as(ErrorField, @enumFromInt(field_type))) {
+                .Severity => error_info.severity = try allocator.dupe(u8, field_value),
+                .Code => error_info.code = try allocator.dupe(u8, field_value),
+                .Message => error_info.message = try allocator.dupe(u8, field_value),
+                .Detail => error_info.detail = try allocator.dupe(u8, field_value),
+                .Hint => error_info.hint = try allocator.dupe(u8, field_value),
+                else => {
+                    // Optionally log or ignore other fields
+                },
+            }
+        }
+
+        return error_info;
     }
 
     pub fn processExplainResponses(self: *Protocol) ![]ExplainRow {

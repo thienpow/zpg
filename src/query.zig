@@ -194,8 +194,6 @@ pub const Query = struct {
             },
             .Execute => blk: {
                 const stmt_name = try parsing.parseExecuteStatementName(sql);
-                std.debug.print("Executing {s}\n", .{stmt_name});
-
                 const action = self.conn.statement_cache.get(stmt_name) orelse return error.UnknownPreparedStatement;
 
                 break :blk switch (action) {

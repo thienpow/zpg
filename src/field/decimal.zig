@@ -11,8 +11,9 @@ pub const Decimal = struct {
             var value_str = try allocator.alloc(u8, text.len - 1);
             defer allocator.free(value_str);
 
-            std.mem.copy(u8, value_str[0..pos], text[0..pos]);
-            std.mem.copy(u8, value_str[pos..], text[pos + 1 ..]);
+            // Replace std.mem.copy with slice assignment
+            @memcpy(value_str[0..pos], text[0..pos]);
+            @memcpy(value_str[pos..], text[pos + 1 ..]);
 
             const value = try std.fmt.parseInt(i128, value_str, 10);
             const scale = @as(u8, @intCast(text.len - pos - 1));
@@ -40,21 +41,23 @@ pub const Decimal = struct {
             const zeros_needed = self.scale - value_str.len + 1;
             const result = try allocator.alloc(u8, sign.len + zeros_needed + value_str.len + 1);
 
-            std.mem.copy(u8, result[0..], sign);
+            // Replace std.mem.copy with slice assignment
+            @memcpy(result[0..sign.len], sign);
             result[sign.len] = '0';
             result[sign.len + 1] = '.';
             std.mem.set(u8, result[sign.len + 2 .. sign.len + zeros_needed], '0');
-            std.mem.copy(u8, result[sign.len + zeros_needed ..], value_str);
+            @memcpy(result[sign.len + zeros_needed ..], value_str);
 
             return result;
         } else {
             const decimal_pos = value_str.len - self.scale;
             const result = try allocator.alloc(u8, sign.len + value_str.len + 1);
 
-            std.mem.copy(u8, result[0..], sign);
-            std.mem.copy(u8, result[sign.len .. sign.len + decimal_pos], value_str[0..decimal_pos]);
+            // Replace std.mem.copy with slice assignment
+            @memcpy(result[0..sign.len], sign);
+            @memcpy(result[sign.len .. sign.len + decimal_pos], value_str[0..decimal_pos]);
             result[sign.len + decimal_pos] = '.';
-            std.mem.copy(u8, result[sign.len + decimal_pos + 1 ..], value_str[decimal_pos..]);
+            @memcpy(result[sign.len + decimal_pos + 1 ..], value_str[decimal_pos..]);
 
             return result;
         }

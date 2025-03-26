@@ -261,3 +261,79 @@ pub fn getCommandType(command: []const u8) CommandType {
     else if (std.mem.startsWith(u8, command, "EXECUTE")) .Execute //EXECUTE
     else .Unknown;
 }
+
+pub const NoticeField = enum(u8) {
+    Severity = 'S',
+    Severity_Nonlocalized = 'V',
+    Code = 'C',
+    Message = 'M',
+    Detail = 'D',
+    Hint = 'H',
+    Position = 'P',
+    Internal_Position = 'q',
+    Internal_Query = 'Q',
+    Where = 'W',
+    Schema_Name = 's',
+    Table_Name = 't',
+    Column_Name = 'c',
+    Data_Type_Name = 'd',
+    Constraint_Name = 'n',
+    File = 'F',
+    Line = 'L',
+    Routine = 'R',
+    _,
+};
+
+pub const Notice = struct {
+    severity: ?[]const u8 = null,
+    message: ?[]const u8 = null,
+    detail: ?[]const u8 = null,
+    hint: ?[]const u8 = null,
+    code: ?[]const u8 = null,
+
+    pub fn deinit(self: *Notice, allocator: std.mem.Allocator) void {
+        if (self.severity) |s| allocator.free(s);
+        if (self.message) |m| allocator.free(m);
+        if (self.detail) |d| allocator.free(d);
+        if (self.hint) |h| allocator.free(h);
+        if (self.code) |c| allocator.free(c);
+    }
+};
+
+pub const ErrorField = enum(u8) {
+    Severity = 'S',
+    Severity_Nonlocalized = 'V',
+    Code = 'C',
+    Message = 'M',
+    Detail = 'D',
+    Hint = 'H',
+    Position = 'P',
+    Internal_Position = 'q',
+    Internal_Query = 'Q',
+    Where = 'W',
+    Schema_Name = 's',
+    Table_Name = 't',
+    Column_Name = 'c',
+    Data_Type_Name = 'd',
+    Constraint_Name = 'n',
+    File = 'F',
+    Line = 'L',
+    Routine = 'R',
+    _,
+};
+
+pub const PostgresError = struct {
+    severity: ?[]const u8 = null,
+    code: ?[]const u8 = null,
+    message: ?[]const u8 = null,
+    detail: ?[]const u8 = null,
+    hint: ?[]const u8 = null,
+
+    pub fn deinit(self: *PostgresError, allocator: std.mem.Allocator) void {
+        if (self.severity) |s| allocator.free(s);
+        if (self.code) |c| allocator.free(c);
+        if (self.message) |m| allocator.free(m);
+        if (self.detail) |d| allocator.free(d);
+        if (self.hint) |h| allocator.free(h);
+    }
+};
