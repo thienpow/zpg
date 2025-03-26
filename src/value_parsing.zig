@@ -100,7 +100,11 @@ fn fillDefaultArray(comptime T: type, info: std.builtin.Type.Array, default: any
             result[i] = fillDefaultArray(info.child, child_info.array, default);
         }
     } else {
-        @memset(result[0..info.len], default);
+        if (info.child == u8) {
+            @memset(result[0..info.len], ' '); // Pad CHAR(n) with spaces
+        } else {
+            @memset(result[0..info.len], default); // Use default for other types
+        }
     }
     return result;
 }
@@ -167,48 +171,50 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
         },
         .pointer => |ptr| {
             if (ptr.size == .slice and ptr.child == u8) {
+                std.debug.print("Attempting to read string for type {s}\n", .{@typeName(FieldType)});
+
                 const len = try reader.readInt(i32, .big);
+                std.debug.print("Read length: {}\n", .{len});
+
                 if (len < 0) return "";
                 if (len > 1024) return error.StringTooLong;
+
                 const bytes = try allocator.alloc(u8, @intCast(len));
+                defer allocator.free(bytes);
+
+                // Zero out the memory before reading
+                @memset(bytes, 0);
+
+                std.debug.print("Pre-read memory state: ", .{});
+                for (bytes) |byte| {
+                    std.debug.print("{x} ", .{byte});
+                }
+                std.debug.print("\n", .{});
+
                 const read = try reader.readAtLeast(bytes, @intCast(len));
+                std.debug.print("Bytes read: {}\n", .{read});
+
+                std.debug.print("Post-read memory state: ", .{});
+                for (bytes[0..read]) |byte| {
+                    std.debug.print("{x} ", .{byte});
+                }
+                std.debug.print("\n", .{});
+
                 if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
-                return bytes[0..read];
+
+                // Detailed hex and ASCII diagnostics
+                std.debug.print("Read string content as ASCII: {s}\n", .{bytes[0..read]});
+                std.debug.print("Read string content as hex: ", .{});
+                for (bytes[0..read]) |byte| {
+                    std.debug.print("{x} ", .{byte});
+                }
+                std.debug.print("\n", .{});
+
+                // Ensure we can actually read the bytes
+                const result = try allocator.dupe(u8, bytes[0..read]);
+                return result;
             } else {
                 @compileError("Unsupported pointer type: " ++ @typeName(FieldType));
-            }
-        },
-        .array => |array_info| {
-            const len = try reader.readInt(i32, .big);
-            if (len < 0) {
-                if (array_info.size == .slice) {
-                    return @as(FieldType, &[_]array_info.child{});
-                } else {
-                    return fillDefaultArray(FieldType, array_info, @as(array_info.child, 0));
-                }
-            }
-
-            const bytes = try allocator.alloc(u8, @intCast(len));
-            defer allocator.free(bytes);
-            const read = try reader.readAtLeast(bytes, @intCast(len));
-            if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
-
-            if (bytes[0] != '{') return error.InvalidArrayFormat;
-            if (bytes[read - 1] != '}') return error.InvalidArrayFormat;
-
-            var pos: usize = 1;
-            var elements = std.ArrayList(array_info.child).init(allocator);
-            defer elements.deinit();
-
-            pos = try parseArrayElements(allocator, bytes, &pos, read - 1, array_info.child, &elements);
-
-            if (array_info.size == .slice) {
-                return elements.toOwnedSlice();
-            } else {
-                if (elements.items.len != array_info.len) return error.ArrayLengthMismatch;
-                var result: FieldType = undefined;
-                @memcpy(result[0..array_info.len], elements.items[0..array_info.len]);
-                return result;
             }
         },
         .@"enum" => |enum_info| {
@@ -278,6 +284,53 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
 
             return value;
         },
+        .array => |array_info| {
+            const len = try reader.readInt(i32, .big);
+            if (array_info.child == u8) { // CHAR(n)
+                if (len < 0) {
+                    return fillDefaultArray(FieldType, array_info, ' ');
+                }
+                const bytes = try allocator.alloc(u8, @intCast(len));
+                defer allocator.free(bytes);
+                const read = try reader.readAtLeast(bytes, @intCast(len));
+                if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
+                if (read > array_info.len) return error.StringTooLong;
+                var result: FieldType = undefined;
+                @memcpy(result[0..read], bytes[0..read]);
+                @memset(result[read..array_info.len], ' ');
+                return result;
+            } else { // Handle all other arrays and slices
+                if (len < 0) {
+                    if (array_info.size == .slice) {
+                        return @as(FieldType, &[_]array_info.child{});
+                    } else {
+                        return fillDefaultArray(FieldType, array_info, @as(array_info.child, 0));
+                    }
+                }
+                const bytes = try allocator.alloc(u8, @intCast(len));
+                defer allocator.free(bytes);
+                const read = try reader.readAtLeast(bytes, @intCast(len));
+                if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
+
+                if (bytes[0] != '{') return error.InvalidArrayFormat;
+                if (bytes[read - 1] != '}') return error.InvalidArrayFormat;
+
+                var pos: usize = 1;
+                var elements = std.ArrayList(array_info.child).init(allocator);
+                defer elements.deinit();
+
+                pos = try parseArrayElements(allocator, bytes, &pos, read - 1, array_info.child, &elements);
+
+                if (array_info.size == .slice) {
+                    return elements.toOwnedSlice();
+                } else {
+                    if (elements.items.len != array_info.len) return error.ArrayLengthMismatch;
+                    var result: FieldType = undefined;
+                    @memcpy(result[0..array_info.len], elements.items[0..array_info.len]);
+                    return result;
+                }
+            }
+        },
         .@"struct" => |struct_info| {
             _ = struct_info;
             const len = try reader.readInt(i32, .big);
@@ -285,7 +338,9 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
             if (len < 0) {
                 if (FieldType == Decimal) return FieldType{ .value = 0, .scale = 0 };
                 if (FieldType == Money) return FieldType{ .value = 0 };
-                if (@hasDecl(FieldType, "isSerial") and FieldType.isSerial) return error.SerialCannotBeNull; // Reject NULL                if (@hasDecl(FieldType, "isUuid") and FieldType.isUuid) return FieldType{};
+                if (@hasDecl(FieldType, "isSerial") and FieldType.isSerial) return error.SerialCannotBeNull;
+                if (@hasDecl(FieldType, "isUuid") and FieldType.isUuid) return FieldType{};
+                if (@hasDecl(FieldType, "isVarchar") and FieldType.isVarchar) return FieldType{ .value = "" };
                 if (@hasDecl(FieldType, "isTimestamp") and FieldType.isTimestamp) return FieldType{};
                 if (@hasDecl(FieldType, "isInterval") and FieldType.isInterval) return FieldType{};
                 if (@hasDecl(FieldType, "fromPostgresText")) return FieldType{};
