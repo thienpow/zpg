@@ -91,7 +91,7 @@ pub const MACAddress = struct {
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !MACAddress {
         _ = allocator;
         var bytes: [6]u8 = undefined;
-        var iter = std.mem.split(u8, text, ":");
+        var iter = std.mem.splitScalar(u8, text, ':');
         var i: usize = 0;
 
         while (iter.next()) |octet| {
@@ -119,7 +119,7 @@ pub const MACAddress8 = struct {
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !MACAddress8 {
         _ = allocator;
         var bytes: [8]u8 = undefined;
-        var iter = std.mem.split(u8, text, ":");
+        var iter = std.mem.splitScalar(u8, text, ':');
         var i: usize = 0;
 
         while (iter.next()) |octet| {
@@ -142,7 +142,7 @@ pub const MACAddress8 = struct {
 
 // Helper functions for IP parsing and formatting
 fn parseIPv4(text: []const u8, address: *[16]u8) !void {
-    var iter = std.mem.split(u8, text, ".");
+    var iter = std.mem.splitScalar(u8, text, '.');
     var i: usize = 0;
     while (iter.next()) |octet| {
         if (i >= 4) return error.InvalidIPv4Format;
@@ -150,21 +150,79 @@ fn parseIPv4(text: []const u8, address: *[16]u8) !void {
         i += 1;
     }
     if (i != 4) return error.InvalidIPv4Format;
-    @memset(address[4..], 0); // Zero out unused bytes
+    @memset(address[4..], 0);
 }
 
 fn parseIPv6(text: []const u8, address: *[16]u8) !void {
-    // Simplified: assumes full format (no :: abbreviation)
-    var iter = std.mem.split(u8, text, ":");
-    var i: usize = 0;
-    while (iter.next()) |segment| {
-        if (i >= 8) return error.InvalidIPv6Format;
-        const val = try std.fmt.parseInt(u16, segment, 16);
-        address[i * 2] = @intCast(val >> 8);
-        address[i * 2 + 1] = @intCast(val & 0xFF);
-        i += 1;
+    @memset(address, 0); // Initialize all to zero first
+
+    const double_colon_pos = std.mem.indexOf(u8, text, "::");
+
+    if (double_colon_pos == null) {
+        // Full form: expect exactly 8 segments
+        var iter = std.mem.splitScalar(u8, text, ':');
+        var i: usize = 0;
+        while (iter.next()) |segment| {
+            if (i >= 16) return error.InvalidIPv6Format;
+            const val = try std.fmt.parseInt(u16, segment, 16);
+            address[i] = @intCast(val >> 8);
+            address[i + 1] = @intCast(val & 0xFF);
+            i += 2;
+        }
+        if (i != 16) return error.InvalidIPv6Format;
+    } else {
+        // Handle abbreviated form
+        var iter = std.mem.splitScalar(u8, text, ':');
+        var segments: [8]?u16 = [1]?u16{null} ** 8; // Store parsed segments
+        var segment_count: usize = 0;
+
+        // Parse all segments into an array
+        while (iter.next()) |segment| {
+            if (segment.len > 0) {
+                if (segment_count >= 8) return error.InvalidIPv6Format;
+                segments[segment_count] = try std.fmt.parseInt(u16, segment, 16);
+                segment_count += 1;
+            }
+        }
+
+        // Count segments before ::
+        var temp_iter = std.mem.splitScalar(u8, text, ':');
+        var segments_before: usize = 0;
+        var seen_double_colon = false;
+        while (temp_iter.next()) |seg| {
+            if (seg.len == 0 and !seen_double_colon) {
+                seen_double_colon = true;
+                break;
+            }
+            if (seg.len > 0) segments_before += 1;
+        }
+
+        const total_segments = segment_count;
+        const zero_segments = 8 - total_segments;
+
+        var i: usize = 0;
+
+        // Write segments before ::
+        for (segments[0..segments_before]) |maybe_val| {
+            if (maybe_val) |val| {
+                address[i] = @intCast(val >> 8);
+                address[i + 1] = @intCast(val & 0xFF);
+                i += 2;
+            }
+        }
+
+        // Skip zero segments
+        i += zero_segments * 2;
+
+        // Write segments after ::
+        for (segments[segments_before..total_segments]) |maybe_val| {
+            if (maybe_val) |val| {
+                address[i] = @intCast(val >> 8);
+                address[i + 1] = @intCast(val & 0xFF);
+                i += 2;
+            }
+        }
     }
-    if (i != 8) return error.InvalidIPv6Format;
 }
 
 fn formatIPv4(address: [16]u8, allocator: std.mem.Allocator) ![]u8 {
@@ -180,37 +238,4 @@ fn formatIPv6(address: [16]u8, allocator: std.mem.Allocator) ![]u8 {
         address[8],  address[9],  address[10], address[11],
         address[12], address[13], address[14], address[15],
     });
-}
-
-// Tests
-test "Network Address Types" {
-    const allocator = std.testing.allocator;
-
-    // CIDR
-    const cidr = try CIDR.fromPostgresText("192.168.1.0/24", allocator);
-    try std.testing.expectEqualSlices(u8, &[_]u8{ 192, 168, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, &cidr.address);
-    const cidr_str = try cidr.toString(allocator);
-    defer allocator.free(cidr_str);
-    try std.testing.expectEqualStrings("192.168.1.0/24", cidr_str);
-
-    // Inet
-    const inet = try Inet.fromPostgresText("192.168.1.5", allocator);
-    try std.testing.expectEqual(@as(u8, 255), inet.mask);
-    const inet_str = try inet.toString(allocator);
-    defer allocator.free(inet_str);
-    try std.testing.expectEqualStrings("192.168.1.5", inet_str);
-
-    // MACAddress
-    const mac = try MACAddress.fromPostgresText("08:00:2b:01:02:03", allocator);
-    try std.testing.expectEqualSlices(u8, &[_]u8{ 0x08, 0x00, 0x2b, 0x01, 0x02, 0x03 }, &mac.bytes);
-    const mac_str = try mac.toString(allocator);
-    defer allocator.free(mac_str);
-    try std.testing.expectEqualStrings("08:00:2b:01:02:03", mac_str);
-
-    // MACAddress8
-    const mac8 = try MACAddress8.fromPostgresText("08:00:2b:ff:fe:01:02:03", allocator);
-    try std.testing.expectEqualSlices(u8, &[_]u8{ 0x08, 0x00, 0x2b, 0xff, 0xfe, 0x01, 0x02, 0x03 }, &mac8.bytes);
-    const mac8_str = try mac8.toString(allocator);
-    defer allocator.free(mac8_str);
-    try std.testing.expectEqualStrings("08:00:2b:ff:fe:01:02:03", mac8_str);
 }

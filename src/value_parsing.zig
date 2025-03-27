@@ -18,6 +18,11 @@ const Money = field.Money;
 const TSVector = field.TSVector;
 const TSQuery = field.TSQuery;
 
+pub const CIDR = field.CIDR;
+pub const Inet = field.Inet;
+pub const MACAddress = field.MACAddress;
+pub const MACAddress8 = field.MACAddress8;
+
 pub fn readString(allocator: std.mem.Allocator, reader: anytype) ![]const u8 {
     const len = try reader.readInt(u16, .big);
     if (len == 0xffff) return ""; // NULL value
@@ -312,6 +317,14 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
                         try parsePostgresText(TSVector, allocator, limitedReader.reader(), len_u64)
                     else if (opt_info.child == TSQuery)
                         try parsePostgresText(TSQuery, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == CIDR)
+                        try parsePostgresText(CIDR, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == Inet)
+                        try parsePostgresText(Inet, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == MACAddress)
+                        try parsePostgresText(MACAddress, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == MACAddress8)
+                        try parsePostgresText(MACAddress8, allocator, limitedReader.reader(), len_u64)
                     else
                         try readValueForType(allocator, limitedReader.reader().any(), opt_info.child);
 
@@ -387,6 +400,14 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidTSVector;
             } else if (FieldType == TSQuery) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidTSQuery;
+            } else if (FieldType == CIDR) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidCIDR;
+            } else if (FieldType == Inet) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidInet;
+            } else if (FieldType == MACAddress) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidMACAddress;
+            } else if (FieldType == MACAddress8) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidMACAddress8;
             } else if (@hasDecl(FieldType, "fromPostgresText")) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidCustomType;
             }
