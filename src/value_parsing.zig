@@ -34,6 +34,9 @@ pub const Path = field.Path;
 pub const Point = field.Point;
 pub const Polygon = field.Polygon;
 
+pub const JSON = field.JSON;
+pub const JSONB = field.JSONB;
+
 pub fn readString(allocator: std.mem.Allocator, reader: anytype) ![]const u8 {
     const len = try reader.readInt(u16, .big);
     if (len == 0xffff) return ""; // NULL value
@@ -356,6 +359,10 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
                         try parsePostgresText(Point, allocator, limitedReader.reader(), len_u64)
                     else if (opt_info.child == Polygon)
                         try parsePostgresText(Polygon, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == JSON)
+                        try parsePostgresText(JSON, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == JSONB)
+                        try parsePostgresText(JSONB, allocator, limitedReader.reader(), len_u64)
                     else
                         try readValueForType(allocator, limitedReader.reader().any(), opt_info.child);
 
@@ -437,6 +444,10 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidPoint;
             } else if (FieldType == Polygon) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidPolygon;
+            } else if (FieldType == JSON) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidJSON;
+            } else if (FieldType == JSONB) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidJSONB;
             } else if (@hasDecl(FieldType, "fromPostgresText")) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidCustomType;
             }
