@@ -8,5 +8,6 @@ test {
     // std.testing.refAllDecls(@import("field/numeric.zig"));
     // std.testing.refAllDecls(@import("field/string.zig"));
     //std.testing.refAllDecls(@import("field/timestamp.zig"));
-    std.testing.refAllDecls(@import("field/interval.zig"));
+    //std.testing.refAllDecls(@import("field/interval.zig"));
+    std.testing.refAllDecls(@import("field/datetime.zig"));
 }

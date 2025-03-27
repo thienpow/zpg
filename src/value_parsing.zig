@@ -343,6 +343,8 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
                 if (@hasDecl(FieldType, "isVarchar") and FieldType.isVarchar) return FieldType{ .value = "" };
                 if (@hasDecl(FieldType, "isTimestamp") and FieldType.isTimestamp) return FieldType{ .seconds = 0, .nano_seconds = 0 };
                 if (@hasDecl(FieldType, "isInterval") and FieldType.isInterval) return FieldType{ .months = 0, .days = 0, .microseconds = 0 };
+                if (@hasDecl(FieldType, "isDate") and FieldType.isDate) return FieldType{ .year = 0, .month = 0, .day = 0 };
+                if (@hasDecl(FieldType, "isTime") and FieldType.isTime) return FieldType{ .hours = 0, .minutes = 0, .seconds = 0, .nano_seconds = 0 };
                 if (@hasDecl(FieldType, "fromPostgresText")) return FieldType{};
                 @compileError("Unsupported struct type for NULL: " ++ @typeName(FieldType));
             }
@@ -384,6 +386,12 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
             }
             if (@hasDecl(FieldType, "isInterval") and FieldType.isInterval) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidInterval;
+            }
+            if (@hasDecl(FieldType, "isDate") and FieldType.isDate) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidDate;
+            }
+            if (@hasDecl(FieldType, "isTime") and FieldType.isTime) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidTime;
             }
             if (@hasDecl(FieldType, "fromPostgresText")) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidCustomType;

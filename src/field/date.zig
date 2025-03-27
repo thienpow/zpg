@@ -20,4 +20,6 @@ pub const Date = struct {
 
         return Date{ .year = year, .month = month, .day = day };
     }
+
+    pub const isDate = true;
 };

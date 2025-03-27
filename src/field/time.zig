@@ -30,11 +30,13 @@ pub const Time = struct {
             if (nano_end > pos) {
                 var nano_pad: [9]u8 = [_]u8{'0'} ** 9;
                 const digits = @min(nano_end - pos, 9);
-                std.mem.copy(u8, &nano_pad, text[pos .. pos + digits]);
+                std.mem.copyForwards(u8, &nano_pad, text[pos .. pos + digits]);
                 time.nano_seconds = try std.fmt.parseInt(u32, &nano_pad, 10);
             }
         }
 
         return time;
     }
+
+    pub const isTime = true;
 };
