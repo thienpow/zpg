@@ -8,7 +8,6 @@ pub const Timestamp = struct {
 
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Timestamp {
         _ = allocator;
-        std.debug.print("Parsing timestamp: '{s}'\n", .{text});
         if (text.len < 19) return error.InvalidTimestampFormat;
 
         var timestamp: Timestamp = .{ .seconds = 0, .nano_seconds = 0 };

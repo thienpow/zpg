@@ -1,8 +1,22 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const Decimal = @import("field/decimal.zig").Decimal;
-const Money = @import("field/money.zig").Money;
+const field = @import("field/mod.zig");
+const SmallSerial = field.SmallSerial;
+const Serial = field.Serial;
+const BigSerial = field.BigSerial;
+const Time = field.Time;
+const Date = field.Date;
+const Timestamp = field.Timestamp;
+const Interval = field.Interval;
+const Uuid = field.Uuid;
+const CHAR = field.CHAR;
+const VARCHAR = field.VARCHAR;
+
+const Decimal = field.Decimal;
+const Money = field.Money;
+const TSVector = field.TSVector;
+const TSQuery = field.TSQuery;
 
 pub fn readString(allocator: std.mem.Allocator, reader: anytype) ![]const u8 {
     const len = try reader.readInt(u16, .big);
@@ -121,6 +135,18 @@ fn fillDefaultValue(comptime T: type, default: T) T {
     };
 }
 
+fn readPostgresText(allocator: std.mem.Allocator, reader: anytype, len: u64) ![]u8 {
+    const bytes = try allocator.alloc(u8, len);
+    errdefer allocator.free(bytes);
+
+    const read = try reader.readAtLeast(bytes, len);
+    if (read < len) {
+        allocator.free(bytes);
+        return error.IncompleteRead;
+    }
+    return bytes[0..read];
+}
+
 pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, comptime FieldType: type) !FieldType {
     return switch (@typeInfo(FieldType)) {
         .int => |info| {
@@ -171,10 +197,7 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
         },
         .pointer => |ptr| {
             if (ptr.size == .slice and ptr.child == u8) {
-                std.debug.print("Attempting to read string for type {s}\n", .{@typeName(FieldType)});
-
                 const len = try reader.readInt(i32, .big);
-                std.debug.print("Read length: {}\n", .{len});
 
                 if (len < 0) return "";
                 if (len > 1024) return error.StringTooLong;
@@ -182,35 +205,11 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
                 const bytes = try allocator.alloc(u8, @intCast(len));
                 defer allocator.free(bytes);
 
-                // Zero out the memory before reading
                 @memset(bytes, 0);
-
-                std.debug.print("Pre-read memory state: ", .{});
-                for (bytes) |byte| {
-                    std.debug.print("{x} ", .{byte});
-                }
-                std.debug.print("\n", .{});
-
                 const read = try reader.readAtLeast(bytes, @intCast(len));
-                std.debug.print("Bytes read: {}\n", .{read});
-
-                std.debug.print("Post-read memory state: ", .{});
-                for (bytes[0..read]) |byte| {
-                    std.debug.print("{x} ", .{byte});
-                }
-                std.debug.print("\n", .{});
 
                 if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
 
-                // Detailed hex and ASCII diagnostics
-                std.debug.print("Read string content as ASCII: {s}\n", .{bytes[0..read]});
-                std.debug.print("Read string content as hex: ", .{});
-                for (bytes[0..read]) |byte| {
-                    std.debug.print("{x} ", .{byte});
-                }
-                std.debug.print("\n", .{});
-
-                // Ensure we can actually read the bytes
                 const result = try allocator.dupe(u8, bytes[0..read]);
                 return result;
             } else {
@@ -229,61 +228,7 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
 
             return std.meta.stringToEnum(FieldType, bytes[0..read]) orelse error.InvalidEnum;
         },
-        .optional => |opt_info| {
-            if (@hasDecl(opt_info.child, "isSerial") and opt_info.child.isSerial) {
-                @compileError("SERIAL types (SmallSerial, Serial, BigSerial) cannot be optional");
-            }
 
-            const len = try reader.readInt(i32, .big);
-            if (len < 0) return null;
-            const len_u64 = @as(u64, @intCast(len));
-            var limitedReader = std.io.limitedReader(reader, len_u64);
-
-            const child_info = @typeInfo(opt_info.child);
-            const value = switch (child_info) {
-                .int, .float, .bool => blk: {
-                    if (len_u64 == 0) return error.IncompleteRead;
-                    const child_value = try readValueForType(allocator, limitedReader.reader().any(), opt_info.child);
-                    break :blk child_value;
-                },
-                .@"struct" => blk: {
-                    if (len_u64 == 0) return error.IncompleteRead;
-                    if (opt_info.child == Decimal) {
-                        const bytes = try allocator.alloc(u8, len_u64);
-                        defer allocator.free(bytes);
-                        const read = try limitedReader.reader().readAtLeast(bytes, @intCast(len_u64));
-                        if (read < len_u64) return error.IncompleteRead;
-                        const child_value = try Decimal.fromPostgresText(bytes[0..read], allocator);
-                        break :blk child_value;
-                    }
-                    if (opt_info.child == Money) {
-                        const bytes = try allocator.alloc(u8, len_u64);
-                        defer allocator.free(bytes);
-                        const read = try limitedReader.reader().readAtLeast(bytes, @intCast(len_u64));
-                        if (read < len_u64) return error.IncompleteRead;
-                        const child_value = try Money.fromPostgresText(bytes[0..read], allocator);
-                        break :blk child_value;
-                    }
-                    const child_value = try readValueForType(allocator, limitedReader.reader().any(), opt_info.child);
-                    break :blk child_value;
-                },
-                .pointer, .array, .@"enum" => blk: {
-                    if (len_u64 == 0) return error.IncompleteRead;
-                    const child_value = try readValueForType(allocator, limitedReader.reader().any(), opt_info.child);
-                    break :blk child_value;
-                },
-                else => @compileError("Unsupported optional child type: " ++ @typeName(opt_info.child)),
-            };
-
-            var remaining_buffer: [1]u8 = undefined;
-            const bytes_left = try limitedReader.reader().read(&remaining_buffer);
-            if (bytes_left > 0) {
-                std.debug.print("Unexpected data left: {} bytes\n", .{bytes_left});
-                return error.UnexpectedData;
-            }
-
-            return value;
-        },
         .array => |array_info| {
             const len = try reader.readInt(i32, .big);
             if (array_info.child == u8) { // CHAR(n)
@@ -331,73 +276,128 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
                 }
             }
         },
+        .optional => |opt_info| {
+            if (@hasDecl(opt_info.child, "isSerial") and opt_info.child.isSerial) {
+                @compileError("SERIAL types (SmallSerial, Serial, BigSerial) cannot be optional");
+            }
+
+            const len = try reader.readInt(i32, .big);
+            if (len < 0) return null;
+            const len_u64 = @as(u64, @intCast(len));
+            var limitedReader = std.io.limitedReader(reader, len_u64);
+
+            const child_info = @typeInfo(opt_info.child);
+            const value = switch (child_info) {
+                .int, .float, .bool => blk: {
+                    if (len_u64 == 0) return error.IncompleteRead;
+                    const child_value = try readValueForType(allocator, limitedReader.reader().any(), opt_info.child);
+                    break :blk child_value;
+                },
+                .@"struct" => blk: {
+                    const child_value = if (opt_info.child == Decimal)
+                        try parsePostgresText(Decimal, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == Money)
+                        try parsePostgresText(Money, allocator, limitedReader.reader(), len_u64)
+                    else if (@hasDecl(opt_info.child, "isVarchar") and opt_info.child.isVarchar)
+                        try parsePostgresText(Money, allocator, limitedReader.reader(), len_u64) // Replace Money with Varchar if needed
+                    else if (opt_info.child == Timestamp)
+                        try parsePostgresText(Timestamp, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == Interval)
+                        try parsePostgresText(Interval, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == Date)
+                        try parsePostgresText(Date, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == Time)
+                        try parsePostgresText(Time, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == TSVector)
+                        try parsePostgresText(TSVector, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == TSQuery)
+                        try parsePostgresText(TSQuery, allocator, limitedReader.reader(), len_u64)
+                    else
+                        try readValueForType(allocator, limitedReader.reader().any(), opt_info.child);
+
+                    break :blk child_value;
+                },
+                .pointer, .array, .@"enum" => blk: {
+                    if (len_u64 == 0) return error.IncompleteRead;
+                    const child_value = try readValueForType(allocator, limitedReader.reader().any(), opt_info.child);
+                    break :blk child_value;
+                },
+                else => @compileError("Unsupported optional child type: " ++ @typeName(opt_info.child)),
+            };
+
+            var remaining_buffer: [1]u8 = undefined;
+            const bytes_left = try limitedReader.reader().read(&remaining_buffer);
+            if (bytes_left > 0) {
+                std.debug.print("Unexpected data left: {} bytes\n", .{bytes_left});
+                return error.UnexpectedData;
+            }
+
+            return value;
+        },
         .@"struct" => |struct_info| {
             _ = struct_info;
             const len = try reader.readInt(i32, .big);
 
-            if (len < 0) {
-                if (FieldType == Decimal) return FieldType{ .value = 0, .scale = 0 };
-                if (FieldType == Money) return FieldType{ .value = 0 };
-                if (@hasDecl(FieldType, "isSerial") and FieldType.isSerial) return error.SerialCannotBeNull;
-                if (@hasDecl(FieldType, "isUuid") and FieldType.isUuid) return FieldType{};
-                if (@hasDecl(FieldType, "isVarchar") and FieldType.isVarchar) return FieldType{ .value = "" };
-                if (@hasDecl(FieldType, "isTimestamp") and FieldType.isTimestamp) return FieldType{ .seconds = 0, .nano_seconds = 0 };
-                if (@hasDecl(FieldType, "isInterval") and FieldType.isInterval) return FieldType{ .months = 0, .days = 0, .microseconds = 0 };
-                if (@hasDecl(FieldType, "isDate") and FieldType.isDate) return FieldType{ .year = 0, .month = 0, .day = 0 };
-                if (@hasDecl(FieldType, "isTime") and FieldType.isTime) return FieldType{ .hours = 0, .minutes = 0, .seconds = 0, .nano_seconds = 0 };
-                if (@hasDecl(FieldType, "fromPostgresText")) return FieldType{};
-                @compileError("Unsupported struct type for NULL: " ++ @typeName(FieldType));
-            }
-            if (len > 1024 * 1024) {
-                std.debug.print("Struct: length {} exceeds maximum allowed, type={s}\n", .{ len, @typeName(FieldType) });
-                return error.LengthTooLarge;
-            }
-
-            // Peek at the first few bytes without consuming them
-            // var peek_buffer: [8]u8 = undefined;
-            // const peeked = try reader.readAtLeast(&peek_buffer, @min(8, @as(usize, @intCast(len))));
-            // std.debug.print("Struct: peeked {} bytes: '{s}'\n", .{ peeked, peek_buffer[0..peeked] });
-            // Instead of rewinding (which isn't directly supported), we'll read again
-            // Or we could use a buffered reader if available in your context
+            // if (len < 0) {
+            //     if (FieldType == Decimal) return FieldType{ .value = 0, .scale = 0 };
+            //     if (FieldType == Money) return FieldType{ .value = 0 };
+            //     if (@hasDecl(FieldType, "isSerial") and FieldType.isSerial) return error.SerialCannotBeNull;
+            //     if (@hasDecl(FieldType, "isUuid") and FieldType.isUuid) return FieldType{};
+            //     if (@hasDecl(FieldType, "isVarchar") and FieldType.isVarchar) return FieldType{ .value = "" };
+            //     if (FieldType == Timestamp) return FieldType{ .seconds = 0, .nano_seconds = 0 };
+            //     if (FieldType == Interval) return FieldType{ .months = 0, .days = 0, .microseconds = 0 };
+            //     if (FieldType == Date) return FieldType{ .year = 0, .month = 0, .day = 0 };
+            //     if (FieldType == Time) return FieldType{ .hours = 0, .minutes = 0, .seconds = 0, .nano_seconds = 0 };
+            //     if (FieldType == TSVector) return FieldType{ .lexemes = &[_]TSVector.Lexeme{} };
+            //     if (FieldType == TSQuery) return FieldType{ .nodes = &[_]TSQuery.Node{} };
+            //     if (@hasDecl(FieldType, "fromPostgresText")) return FieldType{};
+            //     @compileError("Unsupported struct type for NULL: " ++ @typeName(FieldType));
+            // }
+            // if (len > 1024 * 1024) {
+            //     std.debug.print("Struct: length {} exceeds maximum allowed, type={s}\n", .{ len, @typeName(FieldType) });
+            //     return error.LengthTooLarge;
+            // }
 
             const bytes = try allocator.alloc(u8, @intCast(len));
             defer allocator.free(bytes);
             const read = try reader.readAtLeast(bytes, @intCast(len));
-            //std.debug.print("Struct: read {} of {} bytes, data='{s}'\n", .{ read, len, bytes[0..read] });
             if (read < @as(usize, @intCast(len))) {
-                //std.debug.print("Struct: incomplete read, expected {}, got {}\n", .{ len, read });
                 return error.IncompleteRead;
             }
 
             if (FieldType == Decimal) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidCustomType;
-            }
-            if (FieldType == Money) {
+            } else if (FieldType == Money) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidCustomType;
-            }
-            if (@hasDecl(FieldType, "isSerial") and FieldType.isSerial) {
+            } else if (@hasDecl(FieldType, "isSerial") and FieldType.isSerial) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidSerial;
-            }
-            if (@hasDecl(FieldType, "isUuid") and FieldType.isUuid) {
+            } else if (@hasDecl(FieldType, "isUuid") and FieldType.isUuid) {
                 return FieldType.fromString(bytes[0..read]) catch return error.InvalidUuid;
-            }
-            if (@hasDecl(FieldType, "isTimestamp") and FieldType.isTimestamp) {
+            } else if (@hasDecl(FieldType, "isVarchar") and FieldType.isVarchar) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidVARCHAR;
+            } else if (FieldType == Timestamp) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidTimestamp;
-            }
-            if (@hasDecl(FieldType, "isInterval") and FieldType.isInterval) {
+            } else if (FieldType == Interval) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidInterval;
-            }
-            if (@hasDecl(FieldType, "isDate") and FieldType.isDate) {
+            } else if (FieldType == Date) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidDate;
-            }
-            if (@hasDecl(FieldType, "isTime") and FieldType.isTime) {
+            } else if (FieldType == Time) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidTime;
-            }
-            if (@hasDecl(FieldType, "fromPostgresText")) {
+            } else if (FieldType == TSVector) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidTSVector;
+            } else if (FieldType == TSQuery) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidTSQuery;
+            } else if (@hasDecl(FieldType, "fromPostgresText")) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidCustomType;
             }
             @compileError("Unsupported struct type: " ++ @typeName(FieldType));
         },
         else => @compileError("Unsupported field type: " ++ @typeName(FieldType)),
     };
+}
+
+fn parsePostgresText(comptime T: type, allocator: std.mem.Allocator, reader: anytype, len: u64) !T {
+    const bytes = try readPostgresText(allocator, reader, len);
+    defer allocator.free(bytes);
+    return try T.fromPostgresText(bytes, allocator);
 }

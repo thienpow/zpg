@@ -74,23 +74,10 @@ test "string types test" {
             }
 
             if (rows.len == 0) {
-                std.debug.print("No rows returned from query\n", .{});
                 return error.NoRowsReturned;
             }
 
             for (rows) |item| {
-
-                // Detailed VARCHAR diagnostics
-                std.debug.print("VARCHAR raw value length: {}\n", .{item.varchar_col.value.len});
-                std.debug.print("VARCHAR raw value hex: ", .{});
-                for (item.varchar_col.value) |byte| {
-                    std.debug.print("{x} ", .{byte});
-                }
-                std.debug.print("\n", .{});
-
-                // Print type information
-                std.debug.print("VARCHAR type info: {s}\n", .{@typeName(@TypeOf(item.varchar_col))});
-
                 try std.testing.expectEqual(@as(u32, 1), item.id.value);
                 try std.testing.expectEqualStrings("This is a text column", item.text_col);
                 try std.testing.expectEqualStrings("abc  ", &item.char_col);

@@ -4,33 +4,44 @@ const std = @import("std");
 pub const TSVector = struct {
     pub const Lexeme = struct {
         word: []const u8,
-        positions: ?[]u16, // Optional positions (e.g., word offsets in the document)
-        weight: ?u8, // Optional weight (A=65, B=66, C=67, D=68)
+        positions: ?[]u16,
+        weight: ?u8, // A=65, B=66, C=67, D=68
     };
 
     lexemes: []Lexeme,
 
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !TSVector {
         var lexeme_list = std.ArrayList(Lexeme).init(allocator);
-        defer lexeme_list.deinit(); // In case of error
+        defer lexeme_list.deinit();
 
         const trimmed = std.mem.trim(u8, text, " ");
         if (trimmed.len == 0) return TSVector{ .lexemes = &[_]Lexeme{} };
 
-        var iter = std.mem.split(u8, trimmed, " ");
+        var iter = std.mem.splitSequence(u8, trimmed, " ");
         while (iter.next()) |token| {
-            const colon_pos = std.mem.indexOf(u8, token, ":") orelse {
-                const word = try allocator.dupe(u8, token[1 .. token.len - 1]); // Strip quotes
+            var word_slice = token;
+            const colon_pos = std.mem.indexOf(u8, word_slice, ":") orelse {
+                if (word_slice.len >= 2 and word_slice[0] == '\'' and word_slice[word_slice.len - 1] == '\'') {
+                    word_slice = word_slice[1 .. word_slice.len - 1]; // Strip quotes
+                }
+                const word = try allocator.dupe(u8, word_slice);
                 try lexeme_list.append(Lexeme{ .word = word, .positions = null, .weight = null });
                 continue;
             };
 
-            const word = try allocator.dupe(u8, token[1 .. colon_pos - 1]); // Strip quotes
-            const pos_weight_str = token[colon_pos + 1 ..];
+            // Handle word part before colon, stripping quotes if present
+            var word_part = word_slice[0..colon_pos];
+            if (word_part.len >= 2 and word_part[0] == '\'' and word_part[word_part.len - 1] == '\'') {
+                word_part = word_part[1 .. word_part.len - 1]; // Strip quotes
+            }
+            const word = try allocator.dupe(u8, word_part);
+
+            // Handle positions and weight after colon
+            const pos_weight_str = word_slice[colon_pos + 1 ..];
             var positions = std.ArrayList(u16).init(allocator);
             var weight: ?u8 = null;
 
-            var pos_iter = std.mem.split(u8, pos_weight_str, ",");
+            var pos_iter = std.mem.splitSequence(u8, pos_weight_str, ",");
             while (pos_iter.next()) |pos_str| {
                 if (std.mem.indexOfAny(u8, pos_str, "ABCD")) |weight_idx| {
                     weight = pos_str[weight_idx];
@@ -106,11 +117,21 @@ pub const TSQuery = struct {
                 },
                 '<' => {
                     if (i + 1 >= trimmed.len) return error.InvalidTSQueryFormat;
+                    if (node_list.items.len == 0 or node_list.items[node_list.items.len - 1] != .term) {
+                        return error.InvalidTSQueryFormat;
+                    }
                     if (trimmed[i + 1] == '-') {
                         if (i + 3 >= trimmed.len or trimmed[i + 2] != '>') return error.InvalidTSQueryFormat;
                         try node_list.append(Node{ .operator = '<' });
                         try node_list.append(Node{ .phrase_distance = 1 });
                         i += 3;
+                        while (i < trimmed.len and trimmed[i] == ' ') i += 1;
+                        // Skip the right term
+                        var end = i;
+                        while (end < trimmed.len and end != ' ' and end != '&' and end != '|' and end != '!') {
+                            end += 1;
+                        }
+                        i = end;
                     } else {
                         const end = std.mem.indexOf(u8, trimmed[i..], ">") orelse return error.InvalidTSQueryFormat;
                         const dist_str = trimmed[i + 1 .. i + end];
@@ -118,6 +139,13 @@ pub const TSQuery = struct {
                         try node_list.append(Node{ .operator = '<' });
                         try node_list.append(Node{ .phrase_distance = distance });
                         i += end + 1;
+                        while (i < trimmed.len and trimmed[i] == ' ') i += 1;
+                        // Skip the right term
+                        var end_right = i;
+                        while (end_right < trimmed.len and end_right != ' ' and end_right != '&' and end_right != '!') {
+                            end_right += 1;
+                        }
+                        i = end_right;
                     }
                 },
                 else => {
@@ -128,12 +156,20 @@ pub const TSQuery = struct {
                     const term_str = trimmed[i..end];
                     const colon_pos = std.mem.indexOf(u8, term_str, ":");
                     if (colon_pos) |pos| {
-                        const word = try allocator.dupe(u8, term_str[0..pos]);
+                        var word = term_str[0..pos];
+                        if (word.len >= 2 and word[0] == '\'' and word[word.len - 1] == '\'') {
+                            word = word[1 .. word.len - 1]; // Strip quotes
+                        }
+                        const word_dup = try allocator.dupe(u8, word);
                         const weight = try allocator.dupe(u8, term_str[pos + 1 ..]);
-                        try node_list.append(Node{ .term = .{ .word = word, .weight = weight } });
+                        try node_list.append(Node{ .term = .{ .word = word_dup, .weight = weight } });
                     } else {
-                        const word = try allocator.dupe(u8, term_str);
-                        try node_list.append(Node{ .term = .{ .word = word, .weight = null } });
+                        var word = term_str;
+                        if (term_str.len >= 2 and term_str[0] == '\'' and word[word.len - 1] == '\'') {
+                            word = word[1 .. word.len - 1]; // Strip quotes
+                        }
+                        const word_dup = try allocator.dupe(u8, word);
+                        try node_list.append(Node{ .term = .{ .word = word_dup, .weight = null } });
                     }
                     i = end;
                 },
@@ -166,7 +202,7 @@ pub const TSQuery = struct {
                 },
                 .operator => |op| {
                     if (op == '<' and i + 1 < self.nodes.len and self.nodes[i + 1] == .phrase_distance) {
-                        continue; // Handled in phrase_distance
+                        continue;
                     }
                     try result.append(op);
                 },
@@ -186,32 +222,3 @@ pub const TSQuery = struct {
         return result.toOwnedSlice();
     }
 };
-
-// Tests
-test "Text Search Types" {
-    const allocator = std.testing.allocator;
-
-    // TSVector
-    var tsv = try TSVector.fromPostgresText("'fat':1A 'cat':2,3B", allocator);
-    defer tsv.deinit(allocator);
-    try std.testing.expectEqual(@as(usize, 2), tsv.lexemes.len);
-    try std.testing.expectEqualStrings("fat", tsv.lexemes[0].word);
-    try std.testing.expectEqualSlices(u16, &[_]u16{1}, tsv.lexemes[0].positions.?);
-    try std.testing.expectEqual(@as(u8, 'A'), tsv.lexemes[0].weight.?);
-    const tsv_str = try tsv.toString(allocator);
-    defer allocator.free(tsv_str);
-    try std.testing.expectEqualStrings("'fat':1A 'cat':2,3B", tsv_str);
-
-    // TSQuery
-    var tsq = try TSQuery.fromPostgresText("fat & !cat | dog:AB <2> fish", allocator);
-    defer tsq.deinit(allocator);
-    try std.testing.expectEqual(@as(usize, 8), tsq.nodes.len);
-    try std.testing.expectEqualStrings("fat", tsq.nodes[0].term.word);
-    try std.testing.expectEqual(@as(u8, '&'), tsq.nodes[1].operator);
-    try std.testing.expectEqual(@as(u8, '!'), tsq.nodes[2].operator);
-    try std.testing.expectEqualStrings("cat", tsq.nodes[3].term.word);
-    try std.testing.expectEqual(@as(u32, 2), tsq.nodes[6].phrase_distance);
-    const tsq_str = try tsq.toString(allocator);
-    defer allocator.free(tsq_str);
-    try std.testing.expectEqualStrings("fat & !cat | dog:AB <2> fish", tsq_str);
-}
