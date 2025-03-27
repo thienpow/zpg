@@ -15,7 +15,6 @@ pub const Uuid = struct {
         var byte_pos: usize = 0;
 
         while (byte_pos < 16) : (byte_pos += 1) {
-            // Skip hyphens if present
             if (str.len == 36 and (pos == 8 or pos == 13 or pos == 18 or pos == 23)) {
                 if (str[pos] != '-') return error.InvalidUuidFormat;
                 pos += 1;
@@ -26,7 +25,9 @@ pub const Uuid = struct {
             const low = try charToHex(str[pos]);
             pos += 1;
 
-            uuid.bytes[byte_pos] = (high << 4) | low;
+            // Explicitly handle the shift and OR as separate steps
+            const shifted_high: u8 = @as(u8, high) << 4;
+            uuid.bytes[byte_pos] = shifted_high | @as(u8, low);
         }
 
         return uuid;
@@ -46,13 +47,11 @@ pub const Uuid = struct {
 
         var i: usize = 0;
         for (self.bytes, 0..) |byte, index| {
-            // Add hyphens at specific positions
             if (index == 4 or index == 6 or index == 8 or index == 10) {
                 result[i] = '-';
                 i += 1;
             }
 
-            // Write hex representation of byte
             const hex_chars = "0123456789abcdef";
             result[i] = hex_chars[byte >> 4];
             result[i + 1] = hex_chars[byte & 0x0F];

@@ -11,5 +11,6 @@ test {
     // std.testing.refAllDecls(@import("field/interval.zig"));
     // std.testing.refAllDecls(@import("field/datetime.zig"));
     // std.testing.refAllDecls(@import("field/search.zig"));
-    std.testing.refAllDecls(@import("field/net.zig"));
+    // std.testing.refAllDecls(@import("field/net.zig"));
+    std.testing.refAllDecls(@import("field/uuid.zig"));
 }
