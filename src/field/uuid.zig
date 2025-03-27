@@ -4,7 +4,7 @@ pub const Uuid = struct {
     bytes: [16]u8,
     pub const isUuid = true;
 
-    pub fn fromString(str: []const u8) !Uuid {
+    pub fn fromPostgresText(str: []const u8) !Uuid {
         var uuid: Uuid = undefined;
 
         if (str.len != 36 and str.len != 32) {

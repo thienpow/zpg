@@ -299,12 +299,14 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
                     break :blk child_value;
                 },
                 .@"struct" => blk: {
-                    const child_value = if (opt_info.child == Decimal)
+                    const child_value = if (@hasDecl(opt_info.child, "isVarchar") and opt_info.child.isVarchar)
+                        try parsePostgresText(VARCHAR, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == Uuid)
+                        try parsePostgresText(Uuid, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == Decimal)
                         try parsePostgresText(Decimal, allocator, limitedReader.reader(), len_u64)
                     else if (opt_info.child == Money)
                         try parsePostgresText(Money, allocator, limitedReader.reader(), len_u64)
-                    else if (@hasDecl(opt_info.child, "isVarchar") and opt_info.child.isVarchar)
-                        try parsePostgresText(Money, allocator, limitedReader.reader(), len_u64) // Replace Money with Varchar if needed
                     else if (opt_info.child == Timestamp)
                         try parsePostgresText(Timestamp, allocator, limitedReader.reader(), len_u64)
                     else if (opt_info.child == Interval)
@@ -351,26 +353,6 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
             _ = struct_info;
             const len = try reader.readInt(i32, .big);
 
-            // if (len < 0) {
-            //     if (FieldType == Decimal) return FieldType{ .value = 0, .scale = 0 };
-            //     if (FieldType == Money) return FieldType{ .value = 0 };
-            //     if (@hasDecl(FieldType, "isSerial") and FieldType.isSerial) return error.SerialCannotBeNull;
-            //     if (@hasDecl(FieldType, "isUuid") and FieldType.isUuid) return FieldType{};
-            //     if (@hasDecl(FieldType, "isVarchar") and FieldType.isVarchar) return FieldType{ .value = "" };
-            //     if (FieldType == Timestamp) return FieldType{ .seconds = 0, .nano_seconds = 0 };
-            //     if (FieldType == Interval) return FieldType{ .months = 0, .days = 0, .microseconds = 0 };
-            //     if (FieldType == Date) return FieldType{ .year = 0, .month = 0, .day = 0 };
-            //     if (FieldType == Time) return FieldType{ .hours = 0, .minutes = 0, .seconds = 0, .nano_seconds = 0 };
-            //     if (FieldType == TSVector) return FieldType{ .lexemes = &[_]TSVector.Lexeme{} };
-            //     if (FieldType == TSQuery) return FieldType{ .nodes = &[_]TSQuery.Node{} };
-            //     if (@hasDecl(FieldType, "fromPostgresText")) return FieldType{};
-            //     @compileError("Unsupported struct type for NULL: " ++ @typeName(FieldType));
-            // }
-            // if (len > 1024 * 1024) {
-            //     std.debug.print("Struct: length {} exceeds maximum allowed, type={s}\n", .{ len, @typeName(FieldType) });
-            //     return error.LengthTooLarge;
-            // }
-
             const bytes = try allocator.alloc(u8, @intCast(len));
             defer allocator.free(bytes);
             const read = try reader.readAtLeast(bytes, @intCast(len));
@@ -378,16 +360,16 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
                 return error.IncompleteRead;
             }
 
-            if (FieldType == Decimal) {
-                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidCustomType;
-            } else if (FieldType == Money) {
-                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidCustomType;
-            } else if (@hasDecl(FieldType, "isSerial") and FieldType.isSerial) {
+            if (@hasDecl(FieldType, "isSerial") and FieldType.isSerial) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidSerial;
-            } else if (@hasDecl(FieldType, "isUuid") and FieldType.isUuid) {
-                return FieldType.fromString(bytes[0..read]) catch return error.InvalidUuid;
             } else if (@hasDecl(FieldType, "isVarchar") and FieldType.isVarchar) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidVARCHAR;
+            } else if (FieldType == Decimal) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidDecimalType;
+            } else if (FieldType == Money) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidMoneyType;
+            } else if (FieldType == Uuid) {
+                return FieldType.fromPostgresText(bytes[0..read]) catch return error.InvalidUuid;
             } else if (FieldType == Timestamp) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidTimestamp;
             } else if (FieldType == Interval) {
