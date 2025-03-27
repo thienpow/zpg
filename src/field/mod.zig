@@ -27,8 +27,8 @@ pub const MACAddress = net.MACAddress;
 pub const MACAddress8 = net.MACAddress8;
 
 pub const bit = @import("bit.zig");
-pub const Bit = bit.Bit;
-pub const VarBit = bit.VarBit;
+pub const Bit10 = bit.Bit10;
+pub const VarBit16 = bit.VarBit16;
 
 pub const search = @import("search.zig");
 pub const TSVector = search.TSVector;

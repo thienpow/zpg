@@ -23,6 +23,9 @@ pub const Inet = field.Inet;
 pub const MACAddress = field.MACAddress;
 pub const MACAddress8 = field.MACAddress8;
 
+pub const Bit10 = field.Bit10;
+pub const VarBit16 = field.VarBit16;
+
 pub fn readString(allocator: std.mem.Allocator, reader: anytype) ![]const u8 {
     const len = try reader.readInt(u16, .big);
     if (len == 0xffff) return ""; // NULL value
@@ -327,6 +330,10 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
                         try parsePostgresText(MACAddress, allocator, limitedReader.reader(), len_u64)
                     else if (opt_info.child == MACAddress8)
                         try parsePostgresText(MACAddress8, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == Bit10)
+                        try parsePostgresText(Bit10, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == VarBit16)
+                        try parsePostgresText(VarBit16, allocator, limitedReader.reader(), len_u64)
                     else
                         try readValueForType(allocator, limitedReader.reader().any(), opt_info.child);
 
@@ -390,6 +397,10 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidMACAddress;
             } else if (FieldType == MACAddress8) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidMACAddress8;
+            } else if (FieldType == Bit10) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidBit10;
+            } else if (FieldType == VarBit16) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidVarBit16;
             } else if (@hasDecl(FieldType, "fromPostgresText")) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidCustomType;
             }
