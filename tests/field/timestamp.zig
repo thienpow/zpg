@@ -1,11 +1,11 @@
 const std = @import("std");
 const zpg = @import("zpg");
 
-const DateTimeTest = struct {
+const TimestampTest = struct {
     id: zpg.field.Serial,
     timestamp_col: zpg.field.Timestamp,
 
-    pub fn deinit(self: DateTimeTest, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: TimestampTest, allocator: std.mem.Allocator) void {
         _ = self;
         _ = allocator;
     }
@@ -29,9 +29,9 @@ test "timestamp test" {
     var query = pooled_conn.createQuery(allocator);
     defer query.deinit();
 
-    _ = try query.run("DROP TABLE IF EXISTS datetime_test", zpg.types.Empty);
+    _ = try query.run("DROP TABLE IF EXISTS timestamp_test", zpg.types.Empty);
     _ = try query.run(
-        \\CREATE TABLE datetime_test (
+        \\CREATE TABLE timestamp_test (
         \\    id SERIAL PRIMARY KEY,
         \\    timestamp_col TIMESTAMP
         \\)
@@ -47,10 +47,10 @@ test "timestamp test" {
         zpg.Param.string("4713-01-01 00:00:00+00 BC"), // 4713 BC, near PostgreSQL min
     };
 
-    _ = try query.prepare("insert_data AS INSERT INTO datetime_test (timestamp_col) VALUES ($1), ($2), ($3), ($4), ($5), ($6), ($7)");
+    _ = try query.prepare("insert_data AS INSERT INTO timestamp_test (timestamp_col) VALUES ($1), ($2), ($3), ($4), ($5), ($6), ($7)");
     _ = try query.execute("insert_data", insert_params, zpg.types.Empty);
 
-    const results = try query.run("SELECT * FROM datetime_test ORDER BY id", DateTimeTest);
+    const results = try query.run("SELECT * FROM timestamp_test ORDER BY id", TimestampTest);
 
     switch (results) {
         .select => |rows| {
