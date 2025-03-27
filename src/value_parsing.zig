@@ -26,6 +26,14 @@ pub const MACAddress8 = field.MACAddress8;
 pub const Bit10 = field.Bit10;
 pub const VarBit16 = field.VarBit16;
 
+pub const Box = field.Box;
+pub const Circle = field.Circle;
+pub const Line = field.Line;
+pub const LineSegment = field.LineSegment;
+pub const Path = field.Path;
+pub const Point = field.Point;
+pub const Polygon = field.Polygon;
+
 pub fn readString(allocator: std.mem.Allocator, reader: anytype) ![]const u8 {
     const len = try reader.readInt(u16, .big);
     if (len == 0xffff) return ""; // NULL value
@@ -334,6 +342,20 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
                         try parsePostgresText(Bit10, allocator, limitedReader.reader(), len_u64)
                     else if (opt_info.child == VarBit16)
                         try parsePostgresText(VarBit16, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == Box)
+                        try parsePostgresText(Box, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == Circle)
+                        try parsePostgresText(Circle, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == Line)
+                        try parsePostgresText(Line, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == LineSegment)
+                        try parsePostgresText(LineSegment, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == Path)
+                        try parsePostgresText(Path, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == Point)
+                        try parsePostgresText(Point, allocator, limitedReader.reader(), len_u64)
+                    else if (opt_info.child == Polygon)
+                        try parsePostgresText(Polygon, allocator, limitedReader.reader(), len_u64)
                     else
                         try readValueForType(allocator, limitedReader.reader().any(), opt_info.child);
 
@@ -401,6 +423,20 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidBit10;
             } else if (FieldType == VarBit16) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidVarBit16;
+            } else if (FieldType == Box) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidBox;
+            } else if (FieldType == Circle) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidCircle;
+            } else if (FieldType == Line) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidLine;
+            } else if (FieldType == LineSegment) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidLineSegment;
+            } else if (FieldType == Path) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidPath;
+            } else if (FieldType == Point) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidPoint;
+            } else if (FieldType == Polygon) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidPolygon;
             } else if (@hasDecl(FieldType, "fromPostgresText")) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidCustomType;
             }

@@ -13,5 +13,6 @@ test {
     // std.testing.refAllDecls(@import("field/search.zig"));
     // std.testing.refAllDecls(@import("field/net.zig"));
     // std.testing.refAllDecls(@import("field/uuid.zig"));
-    std.testing.refAllDecls(@import("field/bit.zig"));
+    // std.testing.refAllDecls(@import("field/bit.zig"));
+    std.testing.refAllDecls(@import("field/geometric.zig"));
 }

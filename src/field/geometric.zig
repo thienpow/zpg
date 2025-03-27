@@ -5,8 +5,7 @@ pub const Point = struct {
     x: f64,
     y: f64,
 
-    pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Point {
-        _ = allocator; // Not needed here, but included for consistency
+    pub fn fromPostgresText(text: []const u8, _: std.mem.Allocator) !Point {
         if (text.len < 3 or text[0] != '(' or text[text.len - 1] != ')') return error.InvalidPointFormat;
         const coords = text[1 .. text.len - 1];
         const comma_pos = std.mem.indexOf(u8, coords, ",") orelse return error.InvalidPointFormat;
@@ -31,7 +30,7 @@ pub const Line = struct {
         _ = allocator;
         if (text.len < 5 or text[0] != '{' or text[text.len - 1] != '}') return error.InvalidLineFormat;
         const coeffs = text[1 .. text.len - 1];
-        var iter = std.mem.split(u8, coeffs, ",");
+        var iter = std.mem.splitScalar(u8, coeffs, ',');
 
         const a = try std.fmt.parseFloat(f64, iter.next() orelse return error.InvalidLineFormat);
         const b = try std.fmt.parseFloat(f64, iter.next() orelse return error.InvalidLineFormat);
@@ -104,11 +103,30 @@ pub const Path = struct {
         const points_str = if (is_closed) text[1 .. text.len - 1] else text[1 .. text.len - 1];
         var point_list = std.ArrayList(Point).init(allocator);
 
-        var iter = std.mem.split(u8, points_str, "),(");
+        var buf = try allocator.alloc(u8, points_str.len);
+        defer allocator.free(buf);
+        var buf_idx: usize = 0;
+        var i: usize = 0;
+        while (i < points_str.len) : (i += 1) {
+            if (i + 2 < points_str.len and points_str[i] == ')' and points_str[i + 1] == ',' and points_str[i + 2] == '(') {
+                buf[buf_idx] = ')'; // Keep the closing parenthesis
+                buf_idx += 1;
+                buf[buf_idx] = '|'; // Insert delimiter
+                buf_idx += 1;
+                buf[buf_idx] = '('; // Keep the opening parenthesis
+                buf_idx += 1;
+                i += 2; // Skip ",("
+            } else {
+                buf[buf_idx] = points_str[i];
+                buf_idx += 1;
+            }
+        }
+        const cleaned_points = buf[0..buf_idx];
+
+        var iter = std.mem.splitScalar(u8, cleaned_points, '|');
         while (iter.next()) |point_str| {
-            const cleaned = if (point_str[0] == '(') point_str else try std.fmt.allocPrint(allocator, "({s})", .{point_str});
-            defer if (point_str[0] != '(') allocator.free(cleaned);
-            const point = try Point.fromPostgresText(cleaned, allocator);
+            const trimmed = std.mem.trim(u8, point_str, " ");
+            const point = try Point.fromPostgresText(trimmed, allocator);
             try point_list.append(point);
         }
 
@@ -143,11 +161,32 @@ pub const Polygon = struct {
         if (text.len < 5 or text[0] != '(' or text[text.len - 1] != ')') return error.InvalidPolygonFormat;
         var point_list = std.ArrayList(Point).init(allocator);
 
-        var iter = std.mem.split(u8, text[1 .. text.len - 1], "),(");
+        const points_str = text[1 .. text.len - 1];
+
+        var buf = try allocator.alloc(u8, points_str.len);
+        defer allocator.free(buf);
+        var buf_idx: usize = 0;
+        var i: usize = 0;
+        while (i < points_str.len) : (i += 1) {
+            if (i + 2 < points_str.len and points_str[i] == ')' and points_str[i + 1] == ',' and points_str[i + 2] == '(') {
+                buf[buf_idx] = ')';
+                buf_idx += 1;
+                buf[buf_idx] = '|';
+                buf_idx += 1;
+                buf[buf_idx] = '(';
+                buf_idx += 1;
+                i += 2; // Skip ",("
+            } else {
+                buf[buf_idx] = points_str[i];
+                buf_idx += 1;
+            }
+        }
+        const cleaned_points = buf[0..buf_idx];
+
+        var iter = std.mem.splitScalar(u8, cleaned_points, '|');
         while (iter.next()) |point_str| {
-            const cleaned = if (point_str[0] == '(') point_str else try std.fmt.allocPrint(allocator, "({s})", .{point_str});
-            defer if (point_str[0] != '(') allocator.free(cleaned);
-            const point = try Point.fromPostgresText(cleaned, allocator);
+            const trimmed = std.mem.trim(u8, point_str, " ");
+            const point = try Point.fromPostgresText(trimmed, allocator);
             try point_list.append(point);
         }
 
@@ -182,9 +221,13 @@ pub const Circle = struct {
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Circle {
         if (text.len < 5 or text[0] != '<' or text[text.len - 1] != '>') return error.InvalidCircleFormat;
         const parts = text[1 .. text.len - 1];
-        const comma_pos = std.mem.indexOf(u8, parts, ",") orelse return error.InvalidCircleFormat;
 
-        const center = try Point.fromPostgresText(parts[0 .. comma_pos + 1], allocator);
+        // Find the end of the point (closing parenthesis)
+        const paren_close = std.mem.indexOf(u8, parts, ")") orelse return error.InvalidCircleFormat;
+        if (paren_close == parts.len - 1) return error.InvalidCircleFormat; // No radius
+        const comma_pos = std.mem.indexOfPos(u8, parts, paren_close + 1, ",") orelse return error.InvalidCircleFormat;
+
+        const center = try Point.fromPostgresText(parts[0 .. paren_close + 1], allocator);
         const radius = try std.fmt.parseFloat(f64, parts[comma_pos + 1 ..]);
         return Circle{ .center = center, .radius = radius };
     }
