@@ -341,7 +341,7 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
                 if (@hasDecl(FieldType, "isSerial") and FieldType.isSerial) return error.SerialCannotBeNull;
                 if (@hasDecl(FieldType, "isUuid") and FieldType.isUuid) return FieldType{};
                 if (@hasDecl(FieldType, "isVarchar") and FieldType.isVarchar) return FieldType{ .value = "" };
-                if (@hasDecl(FieldType, "isTimestamp") and FieldType.isTimestamp) return FieldType{};
+                if (@hasDecl(FieldType, "isTimestamp") and FieldType.isTimestamp) return FieldType{ .seconds = 0, .nano_seconds = 0 };
                 if (@hasDecl(FieldType, "isInterval") and FieldType.isInterval) return FieldType{};
                 if (@hasDecl(FieldType, "fromPostgresText")) return FieldType{};
                 @compileError("Unsupported struct type for NULL: " ++ @typeName(FieldType));
