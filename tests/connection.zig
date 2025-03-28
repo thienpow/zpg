@@ -10,7 +10,7 @@ test "Connection initialization failure with invalid host" {
         .username = "postgres",
         .database = "test",
         .password = "postgres", // Match your server setup
-        .ssl = false,
+        .tls_mode = .disable,
     };
 
     const conn = Connection.init(allocator, config);
@@ -27,7 +27,7 @@ test "Connection success" {
         .username = "postgres",
         .database = "postgres",
         .password = "postgres",
-        .ssl = false,
+        .tls_mode = .disable,
     };
 
     var conn = try Connection.init(allocator, config);
@@ -47,7 +47,7 @@ test "Connection failure with wrong password" {
         .username = "postgres",
         .database = "zui",
         .password = "wrongpassword",
-        .ssl = false,
+        .tls_mode = .disable,
     };
 
     var conn = try Connection.init(allocator, config);

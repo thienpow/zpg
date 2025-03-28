@@ -11,7 +11,7 @@ const config = zpg.Config{
     .username = "postgres", // Database username
     .database = "zui", // Database name
     .password = "postgres", // Database password
-    .ssl = false, // SSL enabled/disabled
+    .tls_mode = .disable, // SSL enabled/disabled
 };
 
 // Define a User struct to represent a user in the database

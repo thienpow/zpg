@@ -19,7 +19,7 @@ pub const Auth = struct {
 
     pub fn deinit(_: *Auth) void {}
 
-    pub fn authenticate(self: *const Auth) Error!void {
+    pub fn authenticate(self: *const Auth) !void {
         var sasl = SASL.init(self.allocator, self.conn);
         defer sasl.deinit();
 

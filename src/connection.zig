@@ -1,33 +1,33 @@
 const std = @import("std");
 const mem = std.mem;
 const net = std.net;
-const posix = std.posix;
 
 const Auth = @import("auth.zig").Auth;
-
 const types = @import("types.zig");
-const Error = types.Error;
 const ConnectionState = types.ConnectionState;
-const TypeInfo = types.TypeInfo;
 const RequestType = types.RequestType;
 const ResponseType = types.ResponseType;
 const CommandType = types.CommandType;
-
-const net_utils = @import("net.zig");
 const Config = @import("config.zig").Config;
+const net_utils = @import("net.zig");
+const tls = @import("tls.zig");
 
 pub const Connection = struct {
     stream: net.Stream,
+    tls_client: ?tls.Client = null,
     allocator: mem.Allocator,
     state: ConnectionState = .Disconnected,
     config: Config,
     statement_cache: std.StringHashMap(CommandType),
-
-    /// PostgreSQL protocol version (3.0 by default)
     protocol_version: u32 = 0x30000,
 
-    /// Initializes a new PostgreSQL connection
-    pub fn init(allocator: mem.Allocator, config: Config) Error!Connection {
+    comptime {
+        if (@alignOf(Connection) != 8) { // Or whatever alignment you expect
+            @compileError("Connection has unexpected alignment");
+        }
+    }
+
+    pub fn init(allocator: mem.Allocator, config: Config) !Connection {
         const address = try net_utils.resolveHostname(allocator, config.host, config.port);
         const stream = try net.tcpConnectToAddress(address);
 
@@ -40,11 +40,10 @@ pub const Connection = struct {
         };
     }
 
-    /// Closes the connection and cleans up resources
     pub fn deinit(self: *Connection) void {
         if (self.state == .Connected) {
             self.sendMessage(@intFromEnum(RequestType.Terminate), "", true) catch |err| {
-                std.debug.print("Failed to send termination: {}\n", .{err});
+                std.debug.print("Failed to send termination for {s}: {}\n", .{ self.config.host, err });
             };
         }
         self.stream.close();
@@ -57,17 +56,21 @@ pub const Connection = struct {
         self.statement_cache.deinit();
     }
 
-    pub fn connect(self: *Connection) Error!void {
+    pub fn connect(self: *Connection) !void {
         self.state = .Connecting;
+
+        switch (self.config.tls_mode) {
+            .disable => {},
+            .prefer, .require => {
+                try self.negotiateTLS();
+            },
+        }
+
         try self.startup();
 
         const auth = Auth.init(self.allocator, self);
-        auth.authenticate() catch |err| {
-            self.state = .Error;
-            return err;
-        };
+        try auth.authenticate();
 
-        // Process server messages until ReadyForQuery ('Z')
         var buffer: [1024]u8 = undefined;
         while (true) {
             const msg_len = try self.readMessage(&buffer);
@@ -78,36 +81,29 @@ pub const Connection = struct {
 
             switch (response_type) {
                 .ParameterStatus => {
-                    // ParameterStatus: key-value pair
                     const key = try reader.readUntilDelimiterAlloc(self.allocator, 0, 256);
                     defer self.allocator.free(key);
                     const value = try reader.readUntilDelimiterAlloc(self.allocator, 0, 256);
                     defer self.allocator.free(value);
                 },
                 .BackendKeyData => {
-                    // BackendKeyData: PID and secret key
                     const pid = try reader.readInt(i32, .big);
                     const secret = try reader.readInt(i32, .big);
                     _ = pid;
                     _ = secret;
-                    // Optionally store these in Connection for cancellation support
                 },
                 .ReadyForQuery => {
-                    // ReadyForQuery
                     const status = try reader.readByte();
                     _ = status;
                     self.state = .Connected;
                     break;
                 },
                 .ErrorResponse => {
-                    const err_msg = buffer[1..msg_len];
-                    std.debug.print("ErrorResponse: {s}\n", .{err_msg});
+                    std.debug.print("ErrorResponse from {s}: {s}\n", .{ self.config.host, buffer[1..msg_len] });
                     self.state = .Error;
                     return error.ConnectionFailed;
                 },
-                else => {
-                    return error.ProtocolError;
-                },
+                else => return error.ProtocolError,
             }
         }
     }
@@ -116,37 +112,44 @@ pub const Connection = struct {
         return self.state == .Connected;
     }
 
-    /// Generic method to send a PostgreSQL message
     pub fn sendMessage(self: *Connection, request_type: u8, payload: []const u8, append_null: bool) !void {
-        // Calculate total message size: 1 (type) + 4 (length) + payload + optional null
-        const total_size = 1 + 4 + payload.len + @intFromBool(append_null);
-
-        // Use an ArrayList for dynamic sizing instead of a fixed buffer
         var buffer = std.ArrayList(u8).init(self.allocator);
         defer buffer.deinit();
 
-        // Reserve space to avoid reallocations
+        const total_size = 1 + 4 + payload.len + @intFromBool(append_null);
         try buffer.ensureTotalCapacity(total_size);
 
         const writer = buffer.writer();
-
-        // Write message type
         try writer.writeByte(request_type);
-
-        // Write length (includes length field itself, excludes type byte)
-        const length = 4 + payload.len + @intFromBool(append_null);
-        try writer.writeInt(i32, @intCast(length), .big);
-
-        // Write payload
+        try writer.writeInt(i32, @intCast(4 + payload.len + @intFromBool(append_null)), .big);
         try writer.writeAll(payload);
+        if (append_null) try writer.writeByte(0);
 
-        // Write null terminator if requested
-        if (append_null) {
-            try writer.writeByte(0);
+        if (self.tls_client) |*tls_client| {
+            try tls_client.writeAll(self.stream, buffer.items);
+        } else {
+            try self.stream.writeAll(buffer.items);
         }
+    }
 
-        // Send the complete message
-        try self.stream.writeAll(buffer.items);
+    pub fn readMessage(self: *Connection, buffer: []u8) !usize {
+        if (self.tls_client) |*tls_client| {
+            return try tls.readMessage(tls_client, self.stream, buffer);
+        } else {
+            const header = try self.stream.reader().readBytesNoEof(5);
+            const len = std.mem.readInt(i32, header[1..5], .big);
+            if (len < 4) return error.ProtocolError;
+
+            const total_len: usize = @intCast(len + 1);
+            if (buffer.len < total_len) return error.BufferTooSmall;
+
+            std.mem.copyForwards(u8, buffer[0..5], &header);
+            const payload = buffer[5..total_len];
+            const bytes_read = try self.stream.reader().readAtLeast(payload, payload.len);
+
+            if (bytes_read < payload.len) return error.UnexpectedEOF;
+            return total_len;
+        }
     }
 
     pub fn readMessageType(self: *Connection, buffer: []u8) !struct { type: u8, len: usize } {
@@ -156,58 +159,55 @@ pub const Connection = struct {
         return .{ .type = response_type, .len = total_len };
     }
 
-    /// Reads a message from the server, returning the length including type byte
-    pub fn readMessage(self: *Connection, buffer: []u8) !usize {
-        const header = try self.stream.reader().readBytesNoEof(5);
-
-        const len = std.mem.readInt(i32, header[1..5], .big);
-        if (len < 4) return error.ProtocolError;
-
-        const len_usize: usize = @intCast(len);
-        const total_len: usize = len_usize + 1;
-        if (buffer.len < total_len) return error.BufferTooSmall;
-
-        std.mem.copyForwards(u8, buffer[0..5], &header);
-        const payload = buffer[5..total_len];
-        const bytes_read = try self.stream.reader().readAtLeast(payload, payload.len);
-
-        if (bytes_read < payload.len) return error.UnexpectedEOF;
-
-        return total_len;
-    }
-
-    /// Sends the PostgreSQL startup message and handles authentication
-    fn startup(self: *Connection) Error!void {
-        // Construct startup message
+    fn startup(self: *Connection) !void {
         var buffer: [1024]u8 = undefined;
         var fbs = std.io.fixedBufferStream(&buffer);
         const writer = fbs.writer();
 
-        // Length placeholder (will be filled later)
         try writer.writeInt(i32, 0, .big);
-
-        // Protocol version
         try writer.writeInt(u32, self.protocol_version, .big);
-
-        // Parameters (key-value pairs, null-terminated)
         try writer.writeAll("user\x00");
         try writer.writeAll(self.config.username);
         try writer.writeByte(0);
-
         try writer.writeAll("database\x00");
-        const db_name = self.config.database orelse self.config.username;
-        try writer.writeAll(db_name);
+        try writer.writeAll(self.config.database orelse self.config.username);
+        try writer.writeByte(0);
         try writer.writeByte(0);
 
-        // Null terminator for parameter list
-        try writer.writeByte(0);
-
-        // Update length (excluding the length field itself)
         const len: i32 = @intCast(fbs.pos);
         fbs.reset();
         try writer.writeInt(i32, len, .big);
 
-        // Send startup message
-        try self.stream.writeAll(buffer[0..@intCast(len)]);
+        if (self.tls_client) |*tls_client| {
+            try tls_client.writeAll(self.stream, buffer[0..@intCast(len)]);
+        } else {
+            try self.stream.writeAll(buffer[0..@intCast(len)]);
+        }
+    }
+
+    fn negotiateTLS(self: *Connection) !void {
+        switch (self.config.tls_mode) {
+            .disable => return,
+            .prefer, .require => {
+                try tls.requestTLS(self.stream);
+                const response = try tls.readTLSResponse(self.stream);
+                if (response == 'S') {
+                    self.tls_client = try tls.initClient(
+                        self.stream,
+                        self.config.host,
+                        self.allocator,
+                        self.config.tls_ca_file,
+                        self.config.tls_client_cert,
+                        self.config.tls_client_key,
+                    );
+                } else if (response == 'N') {
+                    if (self.config.tls_mode == .require) {
+                        return error.TLSRequiredButNotSupported;
+                    }
+                } else {
+                    return error.InvalidTLSResponse;
+                }
+            },
+        }
     }
 };

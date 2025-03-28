@@ -7,19 +7,17 @@ const Condition = std.Thread.Condition;
 const Connection = @import("connection.zig").Connection;
 const Query = @import("query.zig").Query;
 const Config = @import("config.zig").Config;
-const types = @import("types.zig");
-const Error = types.Error;
 
 /// Possible error types for connection pool operations
-pub const PoolError = error{
-    NoAvailableConnections,
-    ConnectionNotFound,
-    PoolIsFull,
-    InitializationFailed,
-    ConnectionFailed,
-    PoolClosed,
-    Timeout,
-} || Error;
+// pub const PoolError = error{
+//     NoAvailableConnections,
+//     ConnectionNotFound,
+//     PoolIsFull,
+//     InitializationFailed,
+//     ConnectionFailed,
+//     PoolClosed,
+//     Timeout,
+// };
 
 /// A thread-safe connection pool for PostgreSQL connections
 pub const ConnectionPool = struct {
@@ -54,7 +52,7 @@ pub const ConnectionPool = struct {
     timeout_ms: u64 = 0,
 
     /// Initializes a new connection pool with the specified configuration and size
-    pub fn init(allocator: Allocator, config: Config, size: usize) PoolError!ConnectionPool {
+    pub fn init(allocator: Allocator, config: Config, size: usize) !ConnectionPool {
         if (size == 0) return error.InitializationFailed;
 
         // Allocate connections array
@@ -65,28 +63,36 @@ pub const ConnectionPool = struct {
         var available_bitmap = try std.DynamicBitSet.initFull(allocator, size);
         errdefer available_bitmap.deinit();
 
+        // Track initialized connections for cleanup
+        var initialized_count: usize = 0;
+        errdefer for (connections[0..initialized_count]) |*conn| {
+            conn.deinit();
+        };
+
         // Initialize each connection
         var failed_count: usize = 0;
         for (connections, 0..) |*conn, i| {
-            conn.* = Connection.init(allocator, config) catch {
+            conn.* = Connection.init(allocator, config) catch |err| {
+                std.debug.print("Connection.init failed ({}): {}\n", .{ i, err });
                 failed_count += 1;
                 available_bitmap.unset(i);
                 continue;
             };
+            initialized_count += 1;
 
             // Connect immediately to verify connection works
-            conn.connect() catch {
+            conn.connect() catch |err| {
+                std.debug.print("Connection.connect failed ({}): {}\n", .{ i, err });
                 failed_count += 1;
                 available_bitmap.unset(i);
                 conn.deinit();
+                initialized_count -= 1;
                 continue;
             };
         }
 
         // If all connections failed, return error
         if (failed_count == size) {
-            allocator.free(connections);
-            available_bitmap.deinit();
             return error.InitializationFailed;
         }
 
@@ -123,12 +129,12 @@ pub const ConnectionPool = struct {
     }
 
     /// Gets an available connection from the pool, waiting if necessary
-    pub fn get(self: *ConnectionPool) PoolError!*Connection {
+    pub fn get(self: *ConnectionPool) !*Connection {
         return self.getWithTimeout(self.timeout_ms);
     }
 
     /// Gets an available connection with a specified timeout
-    pub fn getWithTimeout(self: *ConnectionPool, timeout_ms: u64) PoolError!*Connection {
+    pub fn getWithTimeout(self: *ConnectionPool, timeout_ms: u64) !*Connection {
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -190,7 +196,7 @@ pub const ConnectionPool = struct {
     }
 
     /// Returns a connection to the pool
-    pub fn release(self: *ConnectionPool, conn: *Connection) PoolError!void {
+    pub fn release(self: *ConnectionPool, conn: *Connection) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -267,7 +273,7 @@ pub const ConnectionPool = struct {
     }
 
     /// Closes and reopens all connections in the pool
-    pub fn reset(self: *ConnectionPool) PoolError!void {
+    pub fn reset(self: *ConnectionPool) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -318,7 +324,7 @@ pub const PooledConnection = struct {
     conn: *Connection,
     pool: *ConnectionPool,
 
-    pub fn init(pool: *ConnectionPool) PoolError!PooledConnection {
+    pub fn init(pool: *ConnectionPool) !PooledConnection {
         const conn = try pool.get();
         return PooledConnection{
             .conn = conn,

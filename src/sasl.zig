@@ -62,7 +62,7 @@ pub const SASL = struct {
     }
 
     // Handle SCRAM challenge and final steps
-    pub fn handleScramChallenge(self: *SASL, password: []const u8) Error!void {
+    pub fn handleScramChallenge(self: *SASL, password: []const u8) !void {
         var buffer: [1024]u8 = undefined;
         const msg_len = try self.conn.readMessage(&buffer);
         var fbs = std.io.fixedBufferStream(buffer[0..msg_len]);
@@ -118,7 +118,7 @@ pub const SASL = struct {
     }
 
     // Handle server-final-message
-    fn handleScramFinal(self: *SASL) Error!void {
+    fn handleScramFinal(self: *SASL) !void {
         var buffer: [1024]u8 = undefined;
         const msg_len = try self.conn.readMessage(&buffer);
         var fbs = std.io.fixedBufferStream(buffer[0..msg_len]);

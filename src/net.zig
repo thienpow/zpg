@@ -9,7 +9,7 @@ pub fn resolveHostname(
     allocator: mem.Allocator,
     host: []const u8,
     port: u16,
-) types.Error!std.net.Address {
+) !std.net.Address {
     // Handle empty hostname
     if (host.len == 0) {
         return error.InvalidHostname;

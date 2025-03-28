@@ -19,7 +19,7 @@ test "timestamp test" {
         .username = "postgres",
         .database = "zui",
         .password = "postgres",
-        .ssl = false,
+        .tls_mode = .disable,
     }, 3);
     defer pool.deinit();
 

@@ -10,7 +10,7 @@ const config = zpg.Config{
     .username = "postgres",
     .database = "zui",
     .password = "postgres",
-    .ssl = false,
+    .tls_mode = .disable,
 };
 
 test "invalid prepare test" {
