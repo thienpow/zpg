@@ -7,6 +7,7 @@ pub const Query = @import("query.zig").Query;
 pub const Config = @import("config.zig").Config;
 pub const ConnectionPool = @import("pool.zig").ConnectionPool;
 pub const PooledConnection = @import("pool.zig").PooledConnection;
+pub const Transaction = @import("transaction.zig").Transaction;
 pub const Param = @import("param.zig").Param;
 
 pub const types = @import("types.zig");
