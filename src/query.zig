@@ -122,8 +122,6 @@ pub const Query = struct {
         const command = trimmed[0..@min(trimmed.len, 10)];
         const cmd_type = types.getCommandType(command);
 
-        std.debug.print("Running SQL: {s}, Command Type: {}\n", .{ sql, cmd_type });
-
         return switch (cmd_type) {
             .Prepare => blk: {
                 // Extract name and sql from the PREPARE statement
@@ -194,4 +192,110 @@ pub const Query = struct {
         if (stmt_sql.len == 0) return error.InvalidPrepareSyntax;
         return .{ .name = name, .sql = stmt_sql };
     }
+
+    // // SELECT: Returns a slice of structs
+    // pub fn select(self: *Query, fields: []const []const u8, table: []const u8, condition: ?[]const u8, params: ?[]const Param, comptime T: type) ![]T {
+    //     if (@typeInfo(T) != .@"struct") @compileError("SELECT requires T to be a struct");
+
+    //     // Construct SQL dynamically
+    //     var sql = std.ArrayList(u8).init(self.allocator);
+    //     defer sql.deinit();
+
+    //     try sql.appendSlice("SELECT ");
+    //     for (fields, 0..) |field, i| {
+    //         if (i > 0) try sql.appendSlice(", ");
+    //         try sql.appendSlice(field);
+    //     }
+    //     try sql.appendSlice(" FROM ");
+    //     try sql.appendSlice(table);
+    //     if (condition) |cond| {
+    //         try sql.appendSlice(" WHERE ");
+    //         try sql.appendSlice(cond);
+    //     }
+
+    //     // TODO: Handle params (e.g., parameter binding)
+    //     _ = params; // Placeholder; implement parameter substitution if needed
+
+    //     const sql_str = try sql.toOwnedSlice();
+    //     defer self.allocator.free(sql_str);
+
+    //     try self.conn.sendMessage(@intFromEnum(RequestType.Query), sql_str, true);
+    //     return (try self.protocol.processSelectResponses(T, self.is_extended_query)) orelse &[_]T{};
+    // }
+
+    // // INSERT: Returns number of affected rows
+    // pub fn insert(self: *Query, table: []const u8, fields: []const []const u8, params: ?[]const Param) !u64 {
+    //     var sql = std.ArrayList(u8).init(self.allocator);
+    //     defer sql.deinit();
+
+    //     try sql.appendSlice("INSERT INTO ");
+    //     try sql.appendSlice(table);
+    //     try sql.appendSlice(" (");
+    //     for (fields, 0..) |field, i| {
+    //         if (i > 0) try sql.appendSlice(", ");
+    //         try sql.appendSlice(field);
+    //     }
+    //     try sql.appendSlice(") VALUES (");
+
+    //     // TODO: Handle params for values
+    //     inline for (0..fields.len) |i| {
+    //         if (i > 0) try sql.appendSlice(", ");
+    //         try sql.appendSlice("$"); // Placeholder for parameterized query
+    //         try std.fmt.formatInt(i + 1, 10, .lower, .{}, sql.writer()) catch unreachable;
+    //     }
+    //     try sql.appendSlice(")");
+
+    //     _ = params; // Placeholder; implement parameter binding
+
+    //     const sql_str = try sql.toOwnedSlice();
+    //     defer self.allocator.free(sql_str);
+
+    //     try self.conn.sendMessage(@intFromEnum(RequestType.Query), sql_str, true);
+    //     return try self.protocol.processCommandResponses();
+    // }
+
+    // // UPDATE: Returns number of affected rows
+    // pub fn update(self: *Query, table: []const u8, fields: []const []const u8, params: ?[]const Param) !u64 {
+    //     var sql = std.ArrayList(u8).init(self.allocator);
+    //     defer sql.deinit();
+
+    //     try sql.appendSlice("UPDATE ");
+    //     try sql.appendSlice(table);
+    //     try sql.appendSlice(" SET ");
+    //     for (fields, 0..) |field, i| {
+    //         if (i > 0) try sql.appendSlice(", ");
+    //         try sql.appendSlice(field);
+    //         try sql.appendSlice(" = $");
+    //         try std.fmt.formatInt(i + 1, 10, .lower, .{}, sql.writer()) catch unreachable;
+    //     }
+
+    //     _ = params; // Placeholder; implement condition and parameter binding
+
+    //     const sql_str = try sql.toOwnedSlice();
+    //     defer self.allocator.free(sql_str);
+
+    //     try self.conn.sendMessage(@intFromEnum(RequestType.Query), sql_str, true);
+    //     return try self.protocol.processCommandResponses();
+    // }
+
+    // // DELETE: Returns number of affected rows
+    // pub fn delete(self: *Query, table: []const u8, condition: ?[]const u8, params: ?[]const Param) !u64 {
+    //     var sql = std.ArrayList(u8).init(self.allocator);
+    //     defer sql.deinit();
+
+    //     try sql.appendSlice("DELETE FROM ");
+    //     try sql.appendSlice(table);
+    //     if (condition) |cond| {
+    //         try sql.appendSlice(" WHERE ");
+    //         try sql.appendSlice(cond);
+    //     }
+
+    //     _ = params; // Placeholder; implement parameter binding
+
+    //     const sql_str = try sql.toOwnedSlice();
+    //     defer self.allocator.free(sql_str);
+
+    //     try self.conn.sendMessage(@intFromEnum(RequestType.Query), sql_str, true);
+    //     return try self.protocol.processCommandResponses();
+    // }
 };
