@@ -9,19 +9,8 @@ cd ~/your-dev-path/zpg
 zig build test --summary all
 ```
 
-This will execute all tests, including those for connection pooling (see `tests/pool.zig` for an example), and provide a summary of the results.
+This will execute all tests, including those for connection pooling (see `tests/main.zig` for an example), and provide a summary of the results.
 
-## Detailed Type Documentation
-
-Learn how ZPG handles PostgreSQL’s advanced data types with our comprehensive guides. Each document provides in-depth explanations and examples for integrating these types into your Zig structs.
-
-- [Decimal](https://github.com/thienpow/zpg/blob/main/docs/decimal.md) - Handle precise numeric values like account balances with ZPG’s decimal support.
-- [Enum](https://github.com/thienpow/zpg/blob/main/docs/enum.md) - Map PostgreSQL ENUM types to Zig enums for type-safe status fields.
-- [Interval](https://github.com/thienpow/zpg/blob/main/docs/interval.md) - Work with time durations like subscription periods using ZPG’s interval handling.
-- [Timestamp](https://github.com/thienpow/zpg/blob/main/docs/timestamp.md) - Manage date and time fields with precision, including timezone support.
-- [UUID](https://github.com/thienpow/zpg/blob/main/docs/uuid.md) - Utilize PostgreSQL UUIDs for unique identifiers in your Zig application.
-- [Array](https://github.com/thienpow/zpg/blob/main/docs/array.md) - Leverage PostgreSQL arrays to manage collections of data, such as lists or sets, in your Zig application.
-- [more...](https://github.com/thienpow/zpg/blob/main/src/field/) - composite, geometric, money, net, search...
 
 ### Planned Features
 For a full-fledged PostgreSQL driver, `zpg` could be extended to include:
@@ -58,17 +47,10 @@ These enhancements aim to broaden `zpg`’s compatibility with PostgreSQL’s ri
 
 ## **Potential Improvements for `zpg`**
 
-1.  Binary protocol hit bottlenect at Bind(fast) --> postgres(delay 40ms) --> BindComplete
-2.  Potential fragility with large messages due to fixed buffers.
-
-3. **Support for Asynchronous Queries**
-   - Right now, `zpg` executes queries synchronously.
-   - Adding **async** (event-driven I/O) would allow non-blocking DB operations (like `tokio-postgres` in Rust).
-
-4. **Automatic Struct Mapping for Complex Queries**
-   - Some queries return dynamic column sets (`JOIN` queries, custom views).
-   - Right now, users must define exact structs manually.
-   - Consider adding **auto-detection of column names** based on PostgreSQL metadata.
+1.  **Binary Protocol Performance Bottleneck:** Investigate and mitigate the latency observed between sending a `Bind` command and receiving the `BindComplete` response from PostgreSQL (reportedly around 40ms). This delay can limit throughput in high-frequency scenarios.
+2.  **Robustness with Large Messages:** Enhance handling of large data transfers (query results or parameters) to prevent potential issues caused by fixed-size buffers. Consider implementing dynamic buffering or message chunking.
+3.  **Implement Asynchronous Query Execution:** Introduce non-blocking, asynchronous query execution (e.g., using async/await patterns). This would allow `zpg` to perform database operations without blocking the calling thread, improving concurrency and responsiveness.
+4.  **Flexible Result Set Mapping:** Simplify the process of mapping query results to application structs, especially for complex queries (like JOINs or views) with dynamic column sets. Explore automatic mapping based on column names fetched from PostgreSQL metadata, reducing the need for manual struct definitions for every query variant.
 
 ---
 
