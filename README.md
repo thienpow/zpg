@@ -11,15 +11,6 @@ zig build test --summary all
 
 This will execute all tests, including those for connection pooling (see `tests/main.zig` for an example), and provide a summary of the results.
 
-
-### Planned Features
-For a full-fledged PostgreSQL driver, `zpg` could be extended to include:
-
-- Hook to Streaming Response
-
-These enhancements aim to broaden `zpg`’s compatibility with PostgreSQL’s rich type system and optimize performance.
-
-
 ## Strengths of `zpg`
 
 ### **Struct-Based Query Execution**
@@ -47,7 +38,7 @@ These enhancements aim to broaden `zpg`’s compatibility with PostgreSQL’s ri
 
 ## **Potential Improvements for `zpg`**
 
-1.  **Binary Protocol Performance Bottleneck:** Investigate and mitigate the latency observed between sending a `Bind` command and receiving the `BindComplete` response from PostgreSQL (reportedly around 40ms). This delay can limit throughput in high-frequency scenarios.
+1.  **Binary Protocol Performance Bottleneck:** Investigate and reduce the latency in QueryEx.execute, specifically the ~40ms delay between sending a Bind command and receiving the BindComplete response from PostgreSQL. This delay can impact throughput in high-frequency scenarios. Notably, Query.execute, which uses the Simple Text query protocol, does not exhibit this issue.
 2.  **Robustness with Large Messages:** Enhance handling of large data transfers (query results or parameters) to prevent potential issues caused by fixed-size buffers. Consider implementing dynamic buffering or message chunking.
 3.  **Implement Asynchronous Query Execution:** Introduce non-blocking, asynchronous query execution (e.g., using async/await patterns). This would allow `zpg` to perform database operations without blocking the calling thread, improving concurrency and responsiveness.
 4.  **Flexible Result Set Mapping:** Simplify the process of mapping query results to application structs, especially for complex queries (like JOINs or views) with dynamic column sets. Explore automatic mapping based on column names fetched from PostgreSQL metadata, reducing the need for manual struct definitions for every query variant.
