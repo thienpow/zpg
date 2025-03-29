@@ -58,7 +58,7 @@ test "network types test" {
         zpg.Param.string("00:11:22:ff:fe:33:44:55"),
     };
 
-    _ = try query.prepare("insert_data AS INSERT INTO network_test (cidr_col, inet_col, mac_col, mac8_col) VALUES ($1, $3, $5, $7), ($2, $4, $6, $8)");
+    _ = try query.prepare("insert_data", "INSERT INTO network_test (cidr_col, inet_col, mac_col, mac8_col) VALUES ($1, $3, $5, $7), ($2, $4, $6, $8)");
     _ = try query.execute("insert_data", insert_params, zpg.types.Empty);
 
     const results = try query.run("SELECT * FROM network_test ORDER BY id", NetworkTest);

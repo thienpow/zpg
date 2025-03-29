@@ -63,11 +63,11 @@ test "simple pool test" {
     // Step 1. Benchmark and prepare a SELECT statement
     std.debug.print("\nPreparing SELECT statement 'user_one'...\n", .{});
     var start_time = std.time.nanoTimestamp();
-    const prepared_user_one = try query.prepare("user_one (int8) AS SELECT id, username FROM users WHERE id = $1");
+    const prepared_user_one = try query.prepare("user_one", "SELECT id, username FROM users WHERE id = $1");
     const prepare_select_time = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time)) / 1000.0;
     std.debug.print("  Time taken to prepare SELECT statement: {d:.3} µs\n", .{prepare_select_time});
     start_time = std.time.nanoTimestamp();
-    const repeat_ok = try query.prepare("user_one (int8) AS SELECT id, username FROM users WHERE id = $1");
+    const repeat_ok = try query.prepare("user_one", "SELECT id, username FROM users WHERE id = $1");
     const prepare_select_time2 = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time)) / 1000.0;
     std.debug.print("  Repeat, expect skip happen because of cached: {d:.3} {any} µs\n", .{ prepare_select_time2, repeat_ok });
 
@@ -112,7 +112,7 @@ test "simple pool test" {
     // Step 4. Benchmark and prepare an UPDATE statement
     std.debug.print("\nPreparing UPDATE statement 'user_update'...\n", .{});
     start_time = std.time.nanoTimestamp();
-    const prepared_user_update = try query.prepare("user_update (text, int8) AS UPDATE users SET first_name = $1 WHERE id = $2");
+    const prepared_user_update = try query.prepare("user_update", "UPDATE users SET first_name = $1 WHERE id = $2");
 
     const prepare_update_time = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start_time)) / 1000.0;
     std.debug.print("  Time taken to prepare UPDATE statement: {d:.3} µs\n", .{prepare_update_time});

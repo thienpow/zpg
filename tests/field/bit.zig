@@ -46,7 +46,7 @@ test "bit and varbit test" {
         zpg.Param.string("1010101010101010"), // BIT VARYING(16)
     };
 
-    _ = try query.prepare("insert_data AS INSERT INTO bit_test (bit_col, varbit_col) VALUES ($1, $3), ($2, $4)");
+    _ = try query.prepare("insert_data", "INSERT INTO bit_test (bit_col, varbit_col) VALUES ($1, $3), ($2, $4)");
     _ = try query.execute("insert_data", insert_params, zpg.types.Empty);
 
     const results = try query.run("SELECT * FROM bit_test ORDER BY id", BitTest);

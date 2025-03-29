@@ -28,19 +28,36 @@ pub fn parseExtendedStatementCommand(sql: []const u8) !CommandType {
 // Parse the command type from PREPARE
 pub fn parsePrepareStatementCommand(sql: []const u8) !CommandType {
     const trimmed = std.mem.trim(u8, sql, " \t\n");
-    const as_idx = std.mem.indexOf(u8, trimmed, " AS ") orelse return error.InvalidPrepareSyntax;
-    const stmt_sql = std.mem.trimLeft(u8, trimmed[as_idx + 4 ..], " ");
-    const upper = stmt_sql[0..@min(stmt_sql.len, 10)];
 
-    const command_type = types.getCommandType(upper);
+    // If the input already contains "PREPARE ... AS", extract the statement part
+    if (std.mem.indexOf(u8, trimmed, " AS ")) |as_idx| {
+        const stmt_sql = std.mem.trimLeft(u8, trimmed[as_idx + 4 ..], " ");
+        const upper = stmt_sql[0..@min(stmt_sql.len, 10)];
 
-    // Check if the command type is allowed in PREPARE
-    switch (command_type) {
-        .Select, .Insert, .Update, .Delete => return command_type, // Allowed commands
-        else => {
-            std.debug.print("\x1b[31mError\x1b[0m: Unsupported command '{s}' in PREPARE statement. Only SELECT, INSERT, UPDATE, and DELETE are allowed.\n", .{@tagName(command_type)});
-            return error.UnsupportedPrepareCommand;
-        }, // Reject everything else
+        const command_type = types.getCommandType(upper);
+
+        // Check if the command type is allowed in PREPARE
+        switch (command_type) {
+            .Select, .Insert, .Update, .Delete => return command_type, // Allowed commands
+            else => {
+                std.debug.print("\x1b[31mError\x1b[0m: Unsupported command '{s}' in PREPARE statement. Only SELECT, INSERT, UPDATE, and DELETE are allowed.\n", .{@tagName(command_type)});
+                return error.UnsupportedPrepareCommand;
+            },
+        }
+    } else {
+        // Assume the input is just the statement SQL (as provided to prepare)
+        const upper = trimmed[0..@min(trimmed.len, 10)];
+
+        const command_type = types.getCommandType(upper);
+
+        // Check if the command type is allowed in PREPARE
+        switch (command_type) {
+            .Select, .Insert, .Update, .Delete => return command_type, // Allowed commands
+            else => {
+                std.debug.print("\x1b[31mError\x1b[0m: Unsupported command '{s}' in PREPARE statement. Only SELECT, INSERT, UPDATE, and DELETE are allowed.\n", .{@tagName(command_type)});
+                return error.UnsupportedPrepareCommand;
+            },
+        }
     }
 }
 

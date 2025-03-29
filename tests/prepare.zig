@@ -26,9 +26,21 @@ test "invalid prepare test" {
     defer query.deinit();
 
     // Test that PREPARE with DROP TABLE fails as expected, because Only SELECT, INSERT, UPDATE, and DELETE are allowed.
-    const invalid_prepare_result = query.prepare("drop_table AS DROP TABLE IF EXISTS numeric_test");
+    const invalid_prepare_result = query.prepare("drop_table", "DROP TABLE IF EXISTS numeric_test");
     try std.testing.expectError(error.UnsupportedPrepareCommand, invalid_prepare_result);
 
-    const ok_prepare_result = try query.prepare("user_list_all AS SELECT * FROM users");
+    const ok_prepare_result = try query.prepare("user_list_all", "SELECT * FROM users");
     try std.testing.expect(ok_prepare_result);
+
+    const ok_prepare_via_run_result = try query.run("PREPARE user_list_all AS SELECT * FROM users", zpg.types.Empty);
+    switch (ok_prepare_via_run_result) {
+        .success => |success| std.debug.print("  PREPARE via query.run {}.\n", .{success}),
+        else => unreachable,
+    }
+
+    const ok_prepare_via_run_result2 = try query.run("PREPARE user_list_all2 AS SELECT * FROM users", zpg.types.Empty);
+    switch (ok_prepare_via_run_result2) {
+        .success => |success| std.debug.print("  PREPARE via query.run {}.\n", .{success}),
+        else => unreachable,
+    }
 }

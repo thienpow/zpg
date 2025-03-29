@@ -52,7 +52,7 @@ test "date and time test" {
         zpg.Param.string("12:00:00.5"), // Time with half second
     };
 
-    _ = try query.prepare("insert_data AS INSERT INTO date_time_test (date_col, time_col) VALUES ($1, $5), ($2, $6), ($3, $7), ($4, $8)");
+    _ = try query.prepare("insert_data", "INSERT INTO date_time_test (date_col, time_col) VALUES ($1, $5), ($2, $6), ($3, $7), ($4, $8)");
     _ = try query.execute("insert_data", insert_params, zpg.types.Empty);
 
     const results = try query.run("SELECT * FROM date_time_test ORDER BY id", DateTimeTest);

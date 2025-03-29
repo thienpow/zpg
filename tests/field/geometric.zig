@@ -61,7 +61,7 @@ test "geometric types test" {
         zpg.Param.string("<(0,0),5>"),
     };
 
-    _ = try query.prepare("insert_data AS INSERT INTO geo_test (point_col, line_col, lseg_col, box_col, path_col, polygon_col, circle_col) VALUES ($1, $2, $3, $4, $5, $6, $7)");
+    _ = try query.prepare("insert_data", "INSERT INTO geo_test (point_col, line_col, lseg_col, box_col, path_col, polygon_col, circle_col) VALUES ($1, $2, $3, $4, $5, $6, $7)");
     _ = try query.execute("insert_data", insert_params, zpg.types.Empty);
 
     const results = try query.run("SELECT * FROM geo_test ORDER BY id", GeoTest);

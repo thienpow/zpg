@@ -44,7 +44,7 @@ test "uuid test" {
         zpg.Param.string("1234567890abcdef1234567890abcdef"),
     };
 
-    _ = try query.prepare("insert_data AS INSERT INTO uuid_test (uuid_col) VALUES ($1), ($2)");
+    _ = try query.prepare("insert_data", "INSERT INTO uuid_test (uuid_col) VALUES ($1), ($2)");
     _ = try query.execute("insert_data", insert_params, zpg.types.Empty);
 
     const results = try query.run("SELECT * FROM uuid_test ORDER BY id", UuidTest);

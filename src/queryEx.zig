@@ -21,6 +21,7 @@ pub const QueryEx = struct {
     conn: *Connection,
     allocator: Allocator,
     protocol: Protocol,
+    is_extended_query: bool = true,
 
     pub fn init(allocator: Allocator, conn: *Connection) QueryEx {
         return QueryEx{
@@ -82,7 +83,7 @@ pub const QueryEx = struct {
             .Select => blk: {
                 const type_info = @typeInfo(T);
                 if (type_info != .@"struct") @compileError("EXECUTE for SELECT requires T to be a struct");
-                const rows = (try protocol.processSelectResponses(T)) orelse &[_]T{};
+                const rows = (try protocol.processSelectResponses(T, self.is_extended_query)) orelse &[_]T{};
                 break :blk Result(T){ .select = rows };
             },
             .Insert, .Update, .Delete => Result(T){ .command = try protocol.processCommandResponses() },

@@ -46,7 +46,7 @@ test "interval test" {
         zpg.Param.string("0 seconds"),
     };
 
-    _ = try query.prepare("insert_data AS INSERT INTO interval_test (interval_col) VALUES ($1), ($2), ($3), ($4), ($5), ($6)");
+    _ = try query.prepare("insert_data", "INSERT INTO interval_test (interval_col) VALUES ($1), ($2), ($3), ($4), ($5), ($6)");
     _ = try query.execute("insert_data", insert_params, zpg.types.Empty);
 
     const results = try query.run("SELECT * FROM interval_test ORDER BY id", IntervalTest);

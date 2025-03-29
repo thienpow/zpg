@@ -47,7 +47,7 @@ test "timestamp test" {
         zpg.Param.string("4713-01-01 00:00:00+00 BC"), // 4713 BC, near PostgreSQL min
     };
 
-    _ = try query.prepare("insert_data AS INSERT INTO timestamp_test (timestamp_col) VALUES ($1), ($2), ($3), ($4), ($5), ($6), ($7)");
+    _ = try query.prepare("insert_data", "INSERT INTO timestamp_test (timestamp_col) VALUES ($1), ($2), ($3), ($4), ($5), ($6), ($7)");
     _ = try query.execute("insert_data", insert_params, zpg.types.Empty);
 
     const results = try query.run("SELECT * FROM timestamp_test ORDER BY id", TimestampTest);

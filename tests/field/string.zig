@@ -57,13 +57,13 @@ test "string types test" {
     // Insert test data with explicit type casting
     const insert_params = &[_]Param{ Param.string("This is a text column"), Param.string("abc"), Param.string("Hello VARCHAR") };
 
-    _ = try query.prepare("insert_data AS INSERT INTO string_test (text_col, char_col, varchar_col) VALUES ($1, $2, $3)");
+    _ = try query.prepare("insert_data", "INSERT INTO string_test (text_col, char_col, varchar_col) VALUES ($1, $2, $3)");
     _ = try query.execute("insert_data", insert_params, zpg.types.Empty);
 
     // Select with explicit type specification
     const select_params = &[_]Param{Param.int(@as(u32, 1))};
 
-    _ = try query.prepare("select_data AS SELECT * FROM string_test WHERE id = $1");
+    _ = try query.prepare("select_data", "SELECT * FROM string_test WHERE id = $1");
     const results = try query.execute("select_data", select_params, StringTest);
 
     switch (results) {

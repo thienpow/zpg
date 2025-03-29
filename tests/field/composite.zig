@@ -61,7 +61,7 @@ test "composite type parsing and serialization" {
         zpg.Param.string("(eve,30,f,)"), // Null nickname
     };
 
-    _ = try query.prepare("insert_data AS INSERT INTO composite_test (data) VALUES ($1::mycompositefields), ($2::mycompositefields)");
+    _ = try query.prepare("insert_data", "INSERT INTO composite_test (data) VALUES ($1::mycompositefields), ($2::mycompositefields)");
     _ = try query.execute("insert_data", insert_params, zpg.types.Empty);
 
     // Define result struct for SELECT

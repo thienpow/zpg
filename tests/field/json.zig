@@ -45,7 +45,7 @@ test "json and jsonb type handling" {
         zpg.Param.string("{\"age\": 30, \"name\": \"Bob\", \"active\": false}"),
     };
 
-    _ = try query.prepare("insert_data AS INSERT INTO json_test (json_data, jsonb_data) VALUES ($1::json, $2::jsonb)");
+    _ = try query.prepare("insert_data", "INSERT INTO json_test (json_data, jsonb_data) VALUES ($1::json, $2::jsonb)");
     _ = try query.execute("insert_data", insert_params, zpg.types.Empty);
 
     const results = try query.run("SELECT * FROM json_test ORDER BY id", JsonTest);

@@ -74,14 +74,13 @@ test "numeric types test" {
         "money_col MONEY)", zpg.types.Empty);
 
     // Insert test data
-    _ = try query.prepare("insert_data AS INSERT INTO numeric_test (smallint_col, integer_col, bigint_col, " ++
+    _ = try query.prepare("insert_data", "INSERT INTO numeric_test (smallint_col, integer_col, bigint_col, " ++
         "decimal_col, real_col, double_col, money_col) " ++
         "VALUES ($1, $2, $3, $4, $5, $6, $7)");
     _ = try query.execute("insert_data", insert_params, zpg.types.Empty);
 
     // Select and verify
-    _ = try query.prepare("select_data AS " ++
-        "SELECT id, smallint_col, integer_col, bigint_col, " ++
+    _ = try query.prepare("select_data", "SELECT id, smallint_col, integer_col, bigint_col, " ++
         "decimal_col, real_col, double_col, money_col " ++
         "FROM numeric_test WHERE id = $1");
 

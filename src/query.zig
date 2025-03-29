@@ -41,69 +41,41 @@ pub const Query = struct {
     /// it skips preparation and returns true. Otherwise, it prepares the statement, caches it, and
     /// returns the result of the preparation process. If the statement name is missing from the SQL,
     /// it returns an error.
-    pub fn prepare(self: *Query, sql: []const u8) !bool {
-        var full_sql = sql;
+    pub fn prepare(self: *Query, name: []const u8, sql: []const u8) !bool {
+        var full_sql: []const u8 = undefined;
         var allocated_full_sql = false;
         defer if (allocated_full_sql) self.allocator.free(full_sql);
 
+        // Validate name is not empty
+        if (name.len == 0) {
+            return error.MissingStatementName;
+        }
+
         // Check if statement is already cached
         const trimmed_sql = std.mem.trim(u8, sql, " \t\n");
-        var temp_sql: ?[]const u8 = null;
-        defer if (temp_sql) |ts| self.allocator.free(ts);
-
-        const stmt_name = owned: {
-            if (std.mem.startsWith(u8, trimmed_sql, "PREPARE ")) {
-                const name = try parsing.parsePrepareStatementName(sql);
-                if (name.len == 0) {
-                    return error.MissingStatementName; // Error if name not found
-                }
-                break :owned name;
-            } else {
-                temp_sql = try std.fmt.allocPrint(self.allocator, "PREPARE {s}", .{sql});
-                const name = try parsing.parsePrepareStatementName(temp_sql.?);
-                if (name.len == 0) {
-                    return error.MissingStatementName; // Error if name not found
-                }
-                break :owned try self.allocator.dupe(u8, name);
-            }
-        };
-        defer self.allocator.free(stmt_name);
 
         // If statement is already in cache, skip preparation if action matches
-        if (self.conn.statement_cache.get(stmt_name)) |cached_action| {
-            const current_action = blk: {
-                if (std.mem.startsWith(u8, trimmed_sql, "PREPARE ")) {
-                    break :blk try parsing.parsePrepareStatementCommand(sql);
-                } else {
-                    if (temp_sql == null) {
-                        temp_sql = try std.fmt.allocPrint(self.allocator, "PREPARE {s}", .{sql});
-                    }
-                    break :blk try parsing.parsePrepareStatementCommand(temp_sql.?);
-                }
-            };
-
+        if (self.conn.statement_cache.get(name)) |cached_action| {
+            const current_action = try parsing.parsePrepareStatementCommand(trimmed_sql);
             if (cached_action == current_action) {
                 return true; // Statement already prepared with same action
             }
         }
 
-        // Prepare the statement if not cached or if action differs
-        if (!std.mem.startsWith(u8, trimmed_sql, "PREPARE ")) {
-            full_sql = try std.fmt.allocPrint(self.allocator, "PREPARE {s}", .{sql});
-            allocated_full_sql = true;
-        }
+        // Prepare the full SQL statement with the provided name
+        full_sql = try std.fmt.allocPrint(self.allocator, "PREPARE {s} AS {s}", .{ name, sql });
+        allocated_full_sql = true;
 
-        // Validate the command *before* allocating owned_name
-        const action = try parsing.parsePrepareStatementCommand(full_sql);
+        // Validate the command
+        const action = try parsing.parsePrepareStatementCommand(trimmed_sql);
 
         try self.conn.sendMessage(@intFromEnum(RequestType.Query), full_sql, true);
 
-        // Allocate owned_name only after validation succeeds
-        const owned_name = try self.allocator.dupe(u8, stmt_name);
-        errdefer self.allocator.free(owned_name); // Free on error after this point
-
-        // Only cache if processing succeeds
+        // Process and cache the result
         const result = try self.protocol.processSimpleCommand();
+
+        const owned_name = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(owned_name); // Free on error after this point
         try self.conn.statement_cache.put(owned_name, action);
 
         return result;
@@ -114,15 +86,18 @@ pub const Query = struct {
     /// the extended query protocol. The function returns the result of the execution based on the
     /// type of the prepared statement (SELECT, INSERT, UPDATE, DELETE, or other).
     pub fn execute(self: *Query, name: []const u8, params: ?[]const Param, comptime T: type) !Result(T) {
+        var buffer = std.ArrayList(u8).init(self.allocator);
+        defer buffer.deinit();
+
+        // Always construct an EXECUTE statement in text mode
+        try buffer.writer().writeAll("EXECUTE ");
+        try buffer.writer().writeAll(name);
+
         if (params) |p| {
-            var buffer = std.ArrayList(u8).init(self.allocator);
-            defer buffer.deinit();
-            try buffer.writer().writeAll("EXECUTE ");
-            try buffer.writer().writeAll(name);
             if (p.len > 0) {
                 try buffer.writer().writeAll(" (");
 
-                // Format parameters
+                // Format parameters as text
                 for (p, 0..) |param, i| {
                     if (i > 0) try buffer.writer().writeAll(", ");
                     try param_utils.formatParamAsText(&buffer, param);
@@ -130,36 +105,10 @@ pub const Query = struct {
 
                 try buffer.writer().writeAll(")");
             }
-
-            return try self.run(buffer.items, T);
-        } else {
-            const protocol = &self.protocol;
-            // Slow path: Use extended query protocol for NULL params
-            try protocol.sendBind(name, params);
-            try self.conn.sendMessage(@intFromEnum(RequestType.Execute), &[_]u8{ 0, 0, 0, 0, 0 }, false);
-            try self.conn.sendMessage(@intFromEnum(RequestType.Sync), "", false);
-
-            if (self.conn.statement_cache.get(name)) |action| {
-                switch (action) {
-                    .Select => {
-                        const type_info = @typeInfo(T);
-                        if (type_info != .@"struct") {
-                            @compileError("EXECUTE for SELECT requires T to be a struct");
-                        }
-                        const rows = (try protocol.processSelectResponses(T, self.is_extended_query)) orelse &[_]T{};
-                        return Result(T){ .select = rows };
-                    },
-                    .Insert, .Update, .Delete => {
-                        return Result(T){ .command = try protocol.processCommandResponses() };
-                    },
-                    else => {
-                        return Result(T){ .success = try protocol.processSimpleCommand() };
-                    },
-                }
-            } else {
-                return error.UnknownPreparedStatement;
-            }
         }
+
+        // Delegate to run for execution
+        return try self.run(buffer.items, T);
     }
 
     /// Runs a SQL query and returns the result based on the type of the query. It supports SELECT,
@@ -173,30 +122,42 @@ pub const Query = struct {
         const command = trimmed[0..@min(trimmed.len, 10)];
         const cmd_type = types.getCommandType(command);
 
-        try self.conn.sendMessage(@intFromEnum(RequestType.Query), sql, true);
+        std.debug.print("Running SQL: {s}, Command Type: {}\n", .{ sql, cmd_type });
 
         return switch (cmd_type) {
-            .Select => Result(T){
-                .select = (try protocol.processSelectResponses(T, self.is_extended_query)) orelse &[_]T{},
-            },
-            .Insert, .Update, .Delete, .Merge => Result(T){
-                .command = try protocol.processCommandResponses(),
-            },
             .Prepare => blk: {
-                const result = try protocol.processSimpleCommand();
-                const stmt_name = try parsing.parsePrepareStatementName(sql);
-                const action = try parsing.parsePrepareStatementCommand(sql);
-                const owned_name = try self.allocator.dupe(u8, stmt_name);
-                try self.conn.statement_cache.put(owned_name, action);
+                // Extract name and sql from the PREPARE statement
+                const components = try extractPrepareComponents(sql);
+                // Note: We don't need to dupe or free here since prepare will handle ownership
+                const result = try self.prepare(components.name, components.sql);
                 break :blk Result(T){ .success = result };
             },
-            .Create, .Alter, .Drop, .Grant, .Revoke, .Commit, .Rollback => Result(T){
-                .success = try protocol.processSimpleCommand(),
+            .Select => blk: {
+                try self.conn.sendMessage(@intFromEnum(RequestType.Query), sql, true);
+                break :blk Result(T){
+                    .select = (try protocol.processSelectResponses(T, self.is_extended_query)) orelse &[_]T{},
+                };
             },
-            .Explain => Result(T){
-                .explain = try protocol.processExplainResponses(),
+            .Insert, .Update, .Delete, .Merge => blk: {
+                try self.conn.sendMessage(@intFromEnum(RequestType.Query), sql, true);
+                break :blk Result(T){
+                    .command = try protocol.processCommandResponses(),
+                };
+            },
+            .Create, .Alter, .Drop, .Grant, .Revoke, .Commit, .Rollback => blk: {
+                try self.conn.sendMessage(@intFromEnum(RequestType.Query), sql, true);
+                break :blk Result(T){
+                    .success = try protocol.processSimpleCommand(),
+                };
+            },
+            .Explain => blk: {
+                try self.conn.sendMessage(@intFromEnum(RequestType.Query), sql, true);
+                break :blk Result(T){
+                    .explain = try protocol.processExplainResponses(),
+                };
             },
             .Execute => blk: {
+                try self.conn.sendMessage(@intFromEnum(RequestType.Query), sql, true);
                 const stmt_name = try parsing.parseExecuteStatementName(sql);
                 const action = self.conn.statement_cache.get(stmt_name) orelse return error.UnknownPreparedStatement;
 
@@ -218,5 +179,19 @@ pub const Query = struct {
             },
             .Unknown => error.UnsupportedOperation,
         };
+    }
+
+    fn extractPrepareComponents(sql: []const u8) !struct { name: []const u8, sql: []const u8 } {
+        const trimmed = std.mem.trim(u8, sql, " \t\n");
+        if (!std.mem.startsWith(u8, trimmed, "PREPARE ")) {
+            return error.InvalidPrepareSyntax;
+        }
+        const after_prepare = std.mem.trimLeft(u8, trimmed["PREPARE ".len..], " ");
+        const as_idx = std.mem.indexOf(u8, after_prepare, " AS ") orelse return error.InvalidPrepareSyntax;
+        const name = std.mem.trim(u8, after_prepare[0..as_idx], " ");
+        if (name.len == 0) return error.MissingStatementName;
+        const stmt_sql = std.mem.trimLeft(u8, after_prepare[as_idx + " AS ".len ..], " ");
+        if (stmt_sql.len == 0) return error.InvalidPrepareSyntax;
+        return .{ .name = name, .sql = stmt_sql };
     }
 };

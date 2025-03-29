@@ -52,7 +52,7 @@ test "Text Search Types" {
         zpg.Param.string("super <2> cali"), // Phrase search with distance
     };
 
-    _ = try query.prepare("insert_data AS INSERT INTO text_search_test (tsv_col, tsq_col) VALUES ($1, $5), ($2, $6), ($3, $7), ($4, $8)");
+    _ = try query.prepare("insert_data", "INSERT INTO text_search_test (tsv_col, tsq_col) VALUES ($1, $5), ($2, $6), ($3, $7), ($4, $8)");
     _ = try query.execute("insert_data", insert_params, zpg.types.Empty);
 
     const results = try query.run("SELECT * FROM text_search_test ORDER BY id", TextSearchTest);
