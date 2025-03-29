@@ -3,6 +3,18 @@ const std = @import("std");
 pub const Money = struct {
     value: i64, // Stored as cents
 
+    /// Parses PostgreSQL binary `MONEY` format (8-byte big-endian int)
+    pub fn fromPostgresBinary(data: []const u8) !Money {
+        if (data.len != 8) return error.InvalidMoneyFormat;
+
+        // Convert big-endian bytes to i64
+        var raw_value: i64 = @bitCast(std.mem.bytesToValue(i64, data));
+        raw_value = @byteSwap(raw_value); // Convert from big-endian to little-endian
+
+        return Money{ .value = raw_value };
+    }
+
+    /// Parses PostgreSQL text `MONEY` format (e.g., "$123.45")
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Money {
         if (text.len == 0 or text[0] != '$') return error.InvalidMoneyFormat;
 

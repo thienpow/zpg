@@ -3,6 +3,11 @@ const std = @import("std");
 pub const JSON = struct {
     data: []u8,
 
+    pub fn fromPostgresBinary(data: []const u8, allocator: std.mem.Allocator) !JSON {
+        const json_data = try allocator.dupe(u8, data);
+        return JSON{ .data = json_data };
+    }
+
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !JSON {
         const data = try allocator.dupe(u8, text);
         return JSON{ .data = data };
@@ -25,6 +30,12 @@ pub const JSON = struct {
 
 pub const JSONB = struct {
     data: []u8,
+
+    pub fn fromPostgresBinary(data: []const u8, allocator: std.mem.Allocator) !JSONB {
+        if (data.len == 0 or data[0] != 1) return error.InvalidJSONBFormat;
+        const jsonb_data = try allocator.dupe(u8, data[1..]); // Skip version byte
+        return JSONB{ .data = jsonb_data };
+    }
 
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !JSONB {
         const data = try allocator.dupe(u8, text);

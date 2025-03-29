@@ -10,6 +10,55 @@ pub const TSVector = struct {
 
     lexemes: []Lexeme,
 
+    pub fn fromPostgresBinary(data: []const u8, allocator: std.mem.Allocator) !TSVector {
+        var lexeme_list = std.ArrayList(TSVector.Lexeme).init(allocator);
+        defer lexeme_list.deinit();
+
+        var stream = std.io.fixedBufferStream(data);
+        var reader = stream.reader();
+
+        const lexeme_count = try reader.readInt(u32, .little);
+
+        var i: usize = 0;
+        while (i < lexeme_count) : (i += 1) {
+            // Read word (null-terminated)
+            var word_buf = std.ArrayList(u8).init(allocator);
+            defer word_buf.deinit();
+
+            while (true) {
+                const byte = try reader.readByte();
+                if (byte == 0) break; // End of string
+                try word_buf.append(byte);
+            }
+            const word = try word_buf.toOwnedSlice();
+
+            // Read position count
+            const pos_count = try reader.readInt(u16, .little);
+            var positions = std.ArrayList(u16).init(allocator);
+            defer positions.deinit();
+
+            var weight: ?u8 = null;
+
+            var j: usize = 0;
+            while (j < pos_count) : (j += 1) {
+                var pos = try reader.readInt(u16, .little);
+                if ((pos & 0xC000) != 0) { // Check for weight bits
+                    weight = @as(u8, pos >> 14) + 'A';
+                    pos &= 0x3FFF; // Mask out weight bits
+                }
+                try positions.append(pos);
+            }
+
+            try lexeme_list.append(TSVector.Lexeme{
+                .word = word,
+                .positions = try positions.toOwnedSlice(),
+                .weight = weight,
+            });
+        }
+
+        return TSVector{ .lexemes = try lexeme_list.toOwnedSlice() };
+    }
+
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !TSVector {
         var lexeme_list = std.ArrayList(Lexeme).init(allocator);
         defer lexeme_list.deinit();
@@ -101,6 +150,56 @@ pub const TSQuery = struct {
     };
 
     nodes: []Node,
+
+    pub fn fromPostgresBinary(data: []const u8, allocator: std.mem.Allocator) !TSQuery {
+        var stream = std.io.fixedBufferStream(data);
+        var reader = stream.reader();
+
+        const num_nodes = try reader.readInt(u32, .little);
+        var node_list = std.ArrayList(TSQuery.Node).init(allocator);
+        errdefer {
+            for (node_list.items) |node| {
+                if (node == .term) {
+                    allocator.free(node.term.word);
+                }
+            }
+            node_list.deinit();
+        }
+
+        var i: usize = 0;
+        while (i < num_nodes) : (i += 1) {
+            const node_type = try reader.readByte();
+
+            switch (node_type) {
+                '&', '|', '!' => {
+                    try node_list.append(TSQuery.Node{ .operator = node_type });
+                },
+                '<' => {
+                    try node_list.append(TSQuery.Node{ .operator = '<' });
+                    const distance = try reader.readInt(u32, .little);
+                    try node_list.append(TSQuery.Node{ .phrase_distance = distance });
+                },
+                else => {
+                    // It's a term
+                    stream.pos -= 1; // Move back since we read the first byte assuming operator
+
+                    const word_len = try reader.readInt(u16, .little);
+                    const word = try allocator.dupe(u8, data[stream.pos .. stream.pos + word_len]);
+                    stream.pos += word_len;
+
+                    var weight: ?u8 = null;
+                    if (stream.pos < data.len and (data[stream.pos] == 'A' or data[stream.pos] == 'B' or data[stream.pos] == 'C' or data[stream.pos] == 'D')) {
+                        weight = data[stream.pos];
+                        stream.pos += 1;
+                    }
+
+                    try node_list.append(TSQuery.Node{ .term = .{ .word = word, .weight = weight } });
+                },
+            }
+        }
+
+        return TSQuery{ .nodes = try node_list.toOwnedSlice() };
+    }
 
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !TSQuery {
         var node_list = std.ArrayList(Node).init(allocator);

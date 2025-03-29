@@ -5,6 +5,15 @@ pub const Point = struct {
     x: f64,
     y: f64,
 
+    pub fn fromPostgresBinary(data: []const u8) !Point {
+        if (data.len != 16) return error.InvalidPointBinaryFormat;
+
+        return Point{
+            .x = std.mem.read(f64, data[0..8]),
+            .y = std.mem.read(f64, data[8..16]),
+        };
+    }
+
     pub fn fromPostgresText(text: []const u8, _: std.mem.Allocator) !Point {
         if (text.len < 3 or text[0] != '(' or text[text.len - 1] != ')') return error.InvalidPointFormat;
         const coords = text[1 .. text.len - 1];
@@ -25,6 +34,16 @@ pub const Line = struct {
     a: f64,
     b: f64,
     c: f64,
+
+    pub fn fromPostgresBinary(data: []const u8) !Line {
+        if (data.len != 24) return error.InvalidLineBinaryFormat;
+
+        return Line{
+            .a = std.mem.read(f64, data[0..8]),
+            .b = std.mem.read(f64, data[8..16]),
+            .c = std.mem.read(f64, data[16..24]),
+        };
+    }
 
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Line {
         _ = allocator;
@@ -50,6 +69,15 @@ pub const LineSegment = struct {
     start: Point,
     end: Point,
 
+    pub fn fromPostgresBinary(data: []const u8) !LineSegment {
+        if (data.len != 32) return error.InvalidLsegBinaryFormat;
+
+        return LineSegment{
+            .start = try Point.fromPostgresBinary(data[0..16]),
+            .end = try Point.fromPostgresBinary(data[16..32]),
+        };
+    }
+
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !LineSegment {
         if (text.len < 7 or text[0] != '[' or text[text.len - 1] != ']') return error.InvalidLsegFormat;
         const points = text[1 .. text.len - 1];
@@ -74,6 +102,15 @@ pub const Box = struct {
     top_right: Point,
     bottom_left: Point,
 
+    pub fn fromPostgresBinary(data: []const u8) !Box {
+        if (data.len != 32) return error.InvalidBoxBinaryFormat;
+
+        return Box{
+            .top_right = try Point.fromPostgresBinary(data[0..16]),
+            .bottom_left = try Point.fromPostgresBinary(data[16..32]),
+        };
+    }
+
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Box {
         if (text.len < 5 or text[0] != '(' or text[text.len - 1] != ')') return error.InvalidBoxFormat;
         const points = text[0..];
@@ -97,6 +134,28 @@ pub const Box = struct {
 pub const Path = struct {
     points: []Point,
     is_closed: bool,
+
+    pub fn fromPostgresBinary(data: []const u8, allocator: std.mem.Allocator) !Path {
+        if (data.len < 5) return error.InvalidPathBinaryFormat;
+
+        var index: usize = 0;
+        const npoints = std.mem.readInt(u32, data[index..][0..4], .little);
+        index += 4;
+
+        const is_closed = data[index] != 0;
+        index += 1;
+
+        if (data.len != 5 + npoints * 16) return error.InvalidPathBinaryFormat;
+
+        const points = try allocator.alloc(Point, npoints);
+        errdefer allocator.free(points);
+
+        for (points, 0..) |*point, i| {
+            point.* = try Point.fromPostgresBinary(data[index + i * 16 .. index + (i + 1) * 16]);
+        }
+
+        return Path{ .points = points, .is_closed = is_closed };
+    }
 
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Path {
         const is_closed = text[0] == '(';
@@ -156,6 +215,25 @@ pub const Path = struct {
 /// Represents PostgreSQL's `polygon` type: ((x1,y1),(x2,y2),...)
 pub const Polygon = struct {
     points: []Point,
+
+    pub fn fromPostgresBinary(data: []const u8, allocator: std.mem.Allocator) !Polygon {
+        if (data.len < 4) return error.InvalidPolygonBinaryFormat;
+
+        var index: usize = 0;
+        const npoints = std.mem.readInt(u32, data[index..][0..4], .little);
+        index += 4;
+
+        if (data.len != 4 + npoints * 16) return error.InvalidPolygonBinaryFormat;
+
+        const points = try allocator.alloc(Point, npoints);
+        errdefer allocator.free(points);
+
+        for (points, 0..) |*point, i| {
+            point.* = try Point.fromPostgresBinary(data[index + i * 16 .. index + (i + 1) * 16]);
+        }
+
+        return Polygon{ .points = points };
+    }
 
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Polygon {
         if (text.len < 5 or text[0] != '(' or text[text.len - 1] != ')') return error.InvalidPolygonFormat;
@@ -218,6 +296,15 @@ pub const Circle = struct {
     center: Point,
     radius: f64,
 
+    pub fn fromPostgresBinary(data: []const u8, _: std.mem.Allocator) !Circle {
+        if (data.len != 24) return error.InvalidCircleBinaryFormat;
+
+        const center = try Point.fromPostgresBinary(data[0..16]);
+        const radius = std.mem.readInt(f64, data[16..24], .little);
+
+        return Circle{ .center = center, .radius = radius };
+    }
+
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Circle {
         if (text.len < 5 or text[0] != '<' or text[text.len - 1] != '>') return error.InvalidCircleFormat;
         const parts = text[1 .. text.len - 1];
@@ -238,34 +325,3 @@ pub const Circle = struct {
         return try std.fmt.allocPrint(allocator, "<{s},{d}>", .{ center_str, self.radius });
     }
 };
-
-// Example tests
-test "Geometric Types" {
-    const allocator = std.testing.allocator;
-
-    // Point
-    const p = try Point.fromPostgresText("(1.5,2.3)", allocator);
-    try std.testing.expectApproxEqAbs(@as(f64, 1.5), p.x, 0.0001);
-    const p_str = try p.toString(allocator);
-    defer allocator.free(p_str);
-    try std.testing.expectEqualStrings("(1.5,2.3)", p_str);
-
-    // Line
-    const l = try Line.fromPostgresText("{1,-1,0}", allocator);
-    const l_str = try l.toString(allocator);
-    defer allocator.free(l_str);
-    try std.testing.expectEqualStrings("{1,-1,0}", l_str);
-
-    // Circle
-    const c = try Circle.fromPostgresText("<(0,0),5>", allocator);
-    const c_str = try c.toString(allocator);
-    defer allocator.free(c_str);
-    try std.testing.expectEqualStrings("<(0,0),5>", c_str);
-
-    // Polygon
-    var poly = try Polygon.fromPostgresText("((1,1),(2,2),(3,1))", allocator);
-    defer poly.deinit(allocator);
-    const poly_str = try poly.toString(allocator);
-    defer allocator.free(poly_str);
-    try std.testing.expectEqualStrings("((1,1),(2,2),(3,1))", poly_str);
-}

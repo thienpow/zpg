@@ -4,7 +4,29 @@ pub const Time = struct {
     hours: u8,
     minutes: u8,
     seconds: u8,
-    nano_seconds: u32 = 0, // Optional microseconds/nanoseconds
+    nano_seconds: u32 = 0, // Optional nanoseconds
+
+    pub fn fromPostgresBinary(data: []const u8, allocator: std.mem.Allocator) !Time {
+        _ = allocator; // Not needed here
+        if (data.len != 8) return error.InvalidTimeFormat;
+
+        // Read microseconds since midnight (big-endian i64)
+        var micros: i64 = @bitCast(std.mem.bytesToValue(i64, data[0..8]));
+        micros = @byteSwap(micros);
+
+        if (micros < 0) return error.InvalidTime;
+
+        // Convert to hours, minutes, seconds, and nanoseconds
+        const total_seconds: i64 = @divTrunc(micros, 1_000_000);
+        const nano_seconds: u32 = @intCast((micros % 1_000_000) * 1_000);
+
+        return Time{
+            .hours = @intCast(@divTrunc(total_seconds, 3600)),
+            .minutes = @intCast(@divTrunc(total_seconds % 3600, 60)),
+            .seconds = @intCast(total_seconds % 60),
+            .nano_seconds = nano_seconds,
+        };
+    }
 
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Time {
         _ = allocator; // Unused for now

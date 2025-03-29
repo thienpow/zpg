@@ -5,13 +5,21 @@ pub const Interval = struct {
     days: i32,
     microseconds: i64,
 
+    pub fn fromPostgresBinary(data: []const u8, allocator: std.mem.Allocator) !Interval {
+        _ = allocator; // Unused
+
+        if (data.len != 16) return error.InvalidIntervalFormat;
+
+        return Interval{
+            .microseconds = @byteSwap(@as(i64, @bitCast(std.mem.bytesToValue(u64, data[0..8])))),
+            .days = @byteSwap(@as(i32, @bitCast(std.mem.bytesToValue(u32, data[8..12])))),
+            .months = @byteSwap(@as(i32, @bitCast(std.mem.bytesToValue(u32, data[12..16])))),
+        };
+    }
+
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Interval {
         _ = allocator;
-        var interval = Interval{
-            .months = 0,
-            .days = 0,
-            .microseconds = 0,
-        };
+        var interval = Interval{ .months = 0, .days = 0, .microseconds = 0 };
 
         // Check if it's in HH:MM:SS format
         if (std.mem.count(u8, text, ":") >= 2) {

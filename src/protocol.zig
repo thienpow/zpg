@@ -25,104 +25,256 @@ pub const Protocol = struct {
         return .{ .conn = conn, .allocator = allocator };
     }
 
-    pub fn sendBindMessage(self: *Protocol, name: []const u8, params: ?[]const Param) !void {
-        const allocator = self.allocator;
-        var buffer = std.ArrayList(u8).init(allocator);
+    pub fn sendBind(self: *Protocol, name: []const u8, params: ?[]const Param) !void {
+        var buffer = std.ArrayList(u8).init(self.allocator);
+        defer buffer.deinit();
+
+        // Bind message starts with 'B' (Bind)
+        try buffer.append('B');
+
+        // Prepare placeholder for message length (will be updated later)
+        try buffer.appendNTimes(0, 4);
+
+        // Empty portal name (null-terminated)
+        try buffer.append(0);
+
+        // Statement name (null-terminated)
+        try buffer.appendSlice(name);
+        try buffer.append(0);
+
+        // Parameter format codes
+        const param_count = if (params) |p| p.len else 0;
+        try buffer.writer().writeInt(u16, @intCast(param_count), .big);
+
+        // Aassign parameters with format code
+        if (params) |p| {
+            for (0..p.len) |_| {
+                try buffer.writer().writeInt(u16, 1, .big); // Binary=1, Text=0
+            }
+        }
+
+        // Number of parameter values
+        try buffer.writer().writeInt(u16, @intCast(param_count), .big);
+
+        // Write parameter values
+        if (params) |p| {
+            for (p) |param| {
+                try param.writeTo(buffer.writer());
+            }
+        }
+
+        // Result format codes
+        // Specify one result format code (binary)
+        try buffer.writer().writeInt(u16, 1, .big);
+        try buffer.writer().writeInt(u16, 1, .big); // Binary format
+
+        // Calculate and set the message length
+        const total_len = buffer.items.len;
+        const msg_len: i32 = @intCast(total_len - 1);
+
+        // Set message length in big-endian (bytes 1-4)
+        buffer.items[1] = @intCast((msg_len >> 24) & 0xFF);
+        buffer.items[2] = @intCast((msg_len >> 16) & 0xFF);
+        buffer.items[3] = @intCast((msg_len >> 8) & 0xFF);
+        buffer.items[4] = @intCast(msg_len & 0xFF);
+
+        std.debug.print("Bind message raw: {x}\n", .{buffer.items});
+        std.debug.print("Total length: {d}, Message length: {d}\n", .{ total_len, msg_len });
+
+        // Send the raw message
+        const start = std.time.microTimestamp();
+        try self.conn.sendMessageRaw(buffer.items);
+        const send_time = std.time.microTimestamp() - start;
+        std.debug.print("Send time: {} µs\n", .{send_time});
+    }
+
+    pub fn sendDescribe(self: *Protocol, target: u8, name: []const u8) !void {
+        var buffer = std.ArrayList(u8).init(self.allocator);
         defer buffer.deinit();
         const writer = buffer.writer();
 
-        try writer.writeByte(0); // Empty portal name
+        // Message type
+        try writer.writeByte('D');
+
+        // Length placeholder (will be updated later)
+        try writer.writeInt(i32, 0, .big);
+
+        // Target type: 'S' for statement, 'P' for portal
+        try writer.writeByte(target);
+
+        // Target name (null-terminated)
         try writer.writeAll(name);
         try writer.writeByte(0);
 
-        const param_count = if (params) |p| p.len else 0;
+        // Update length (total length - message type byte)
+        const len: i32 = @intCast(buffer.items.len - 1);
+        std.mem.writeInt(i32, buffer.items[1..5], len, .big);
 
-        // Format codes section
-        try writer.writeInt(u16, @intCast(param_count), .big);
-        if (params) |p| {
-            for (p) |param| {
-                try writer.writeInt(u16, param.format, .big);
-            }
-        }
-
-        // Parameter values section
-        try writer.writeInt(u16, @intCast(param_count), .big);
-        if (params) |p| {
-            for (p) |param| {
-                try param.writeTo(writer); // Use Param’s method
-            }
-        }
-
-        // Result format code section (we want text results)
-        try writer.writeInt(u16, 0, .big);
-
-        try self.conn.sendMessage(@intFromEnum(RequestType.Bind), buffer.items, false);
+        // Send the message
+        try self.conn.sendMessageRaw(buffer.items);
     }
 
-    pub fn processSelectResponses(self: *Protocol, comptime T: type) !?[]T {
-        const allocator = self.allocator;
+    pub fn sendExecute(self: *Protocol, portal: []const u8, max_rows: i32) !void {
+        var buffer = std.ArrayList(u8).init(self.allocator);
+        defer buffer.deinit();
+        const writer = buffer.writer();
+
+        // Message type
+        try writer.writeByte('E');
+
+        // Length placeholder
+        try writer.writeInt(i32, 0, .big);
+
+        // Portal name (null-terminated)
+        try writer.writeAll(portal);
+        try writer.writeByte(0);
+
+        // Maximum number of rows
+        try writer.writeInt(i32, max_rows, .big);
+
+        // Update length (total length - message type byte)
+        const len: i32 = @intCast(buffer.items.len - 1);
+        std.mem.writeInt(i32, buffer.items[1..5], len, .big);
+
+        // Send the message
+        try self.conn.sendMessageRaw(buffer.items);
+    }
+
+    pub fn sendSync(self: *Protocol) !void {
+        var buffer = std.ArrayList(u8).init(self.allocator);
+        defer buffer.deinit();
+        const writer = buffer.writer();
+
+        // Message type
+        try writer.writeByte('S');
+
+        // Length (always 4 for Sync)
+        try writer.writeInt(i32, 4, .big);
+
+        // Send the message
+        try self.conn.sendMessageRaw(buffer.items);
+    }
+
+    pub fn processPrepareResponses(self: *Protocol) !bool {
         var buffer: [4096]u8 = undefined;
-        var rows = std.ArrayList(T).init(allocator);
-        defer rows.deinit();
-
-        const type_info = @typeInfo(T);
-        if (type_info != .@"struct") {
-            @compileError("processSelectResponses requires T to be a struct");
-        }
-        const struct_info = type_info.@"struct";
-
-        const expected_columns: u16 = @intCast(struct_info.fields.len);
-
+        var saw_parse_complete = false;
         while (true) {
             const result = try self.conn.readMessageType(&buffer);
             const response_type: ResponseType = @enumFromInt(result.type);
-            const msg_len = result.len;
-            var fbs = std.io.fixedBufferStream(buffer[5..msg_len]);
-            const reader = fbs.reader().any();
-
             switch (response_type) {
-                .BindComplete => {
-                    // ignnore BindComplete
-                },
-                .RowDescription => {
-                    // Row Description - verify column count
-                    const column_count = try reader.readInt(u16, .big);
-                    if (column_count != expected_columns) return error.ColumnCountMismatch;
-                },
-                .DataRow => {
-                    const column_count = try reader.readInt(u16, .big);
-                    if (column_count != expected_columns) return error.ColumnCountMismatch;
-
-                    var instance: T = undefined;
-                    inline for (struct_info.fields) |field| {
-                        @field(instance, field.name) = try value_parsing.readValueForType(allocator, reader, field.type);
-                    }
-                    try rows.append(instance);
-                },
-                .CommandComplete => {
-                    // CommandComplete
-                    const command_tag = try reader.readUntilDelimiterAlloc(allocator, 0, 1024);
-                    defer allocator.free(command_tag);
-                    if (!std.mem.startsWith(u8, command_tag, "SELECT")) {
-                        return error.NotASelectQuery; // Fail if not a SELECT response
-                    }
-                },
-                .ReadyForQuery => {
-                    const owned_slice = try rows.toOwnedSlice();
-                    if (owned_slice.len == 0) {
-                        return null;
-                    }
-                    return owned_slice;
-                },
+                .ParseComplete => saw_parse_complete = true,
+                .ReadyForQuery => return saw_parse_complete,
                 else => {
-                    std.debug.print("Bad thing happen, response_type: {}", .{response_type});
+                    std.debug.print("Unexpected response type: {}\n", .{response_type});
                     return error.ProtocolError;
                 },
             }
         }
     }
 
-    // Process INSERT/UPDATE/DELETE responses
+    pub fn processSelectResponses(self: *Protocol, comptime T: type) !?[]T {
+        const allocator = self.allocator;
+        var buffer: [4096]u8 = undefined;
+
+        var error_encountered = false;
+        var postgres_error: ?PostgresError = null;
+
+        var rows = std.ArrayList(T).init(allocator);
+        defer rows.deinit();
+
+        const type_info = @typeInfo(T);
+        if (type_info != .@"struct") @compileError("processSelectResponses requires T to be a struct");
+        const struct_info = type_info.@"struct";
+
+        const expected_columns: u16 = @intCast(struct_info.fields.len);
+        var column_formats: ?[]i16 = null;
+        defer if (column_formats) |cf| allocator.free(cf);
+
+        var is_extended_query = false;
+
+        while (true) {
+            const result = try self.conn.readMessageType(&buffer);
+            std.debug.print("Raw type byte: {d} ('{c}')\n", .{ result.type, result.type });
+            const response_type: ResponseType = @enumFromInt(result.type);
+            std.debug.print("Received response_type: {}\n", .{response_type});
+            const msg_len = result.len;
+            var fbs = std.io.fixedBufferStream(buffer[5..msg_len]);
+            const reader = fbs.reader().any();
+
+            switch (response_type) {
+                .BindComplete => {
+                    is_extended_query = true;
+                },
+                .ParameterDescription => {},
+                .RowDescription => {
+                    const column_count = try reader.readInt(u16, .big);
+                    if (column_count != expected_columns) return error.ColumnCountMismatch;
+
+                    column_formats = try allocator.alloc(i16, column_count);
+                    for (0..column_count) |i| {
+                        const name = try reader.readUntilDelimiterAlloc(allocator, 0, 1024);
+                        defer allocator.free(name);
+                        try reader.skipBytes(16, .{}); // OID (4), attr (2), type OID (4), size (2), modifier (4)
+                        column_formats.?[i] = try reader.readInt(i16, .big);
+                        std.debug.print("Column {d}: name={s}, format={}\n", .{ i, name, column_formats.?[i] });
+                    }
+                },
+                .DataRow => {
+                    const column_count = try reader.readInt(u16, .big);
+                    if (column_count != expected_columns) return error.ColumnCountMismatch;
+
+                    if (is_extended_query and column_formats == null) return error.MissingRowDescription;
+
+                    var instance: T = undefined;
+                    inline for (struct_info.fields) |field| {
+                        @field(instance, field.name) = if (is_extended_query)
+                            try value_parsing.readValueForTypeEx(allocator, reader, field.type)
+                        else
+                            try value_parsing.readValueForType(allocator, reader, field.type);
+                    }
+                    try rows.append(instance);
+                },
+                .CommandComplete => {
+                    if (error_encountered) {
+                        return null;
+                    }
+
+                    const command_tag = try reader.readUntilDelimiterAlloc(allocator, 0, 1024);
+                    defer allocator.free(command_tag);
+                    if (!std.mem.startsWith(u8, command_tag, "SELECT")) return error.NotASelectQuery;
+                },
+                .ReadyForQuery => {
+                    if (postgres_error) |*pe| {
+                        pe.deinit(allocator);
+                    }
+                    const owned_slice = try rows.toOwnedSlice();
+                    return if (owned_slice.len == 0) null else owned_slice;
+                },
+                .ErrorResponse => {
+                    error_encountered = true;
+                    if (postgres_error) |*pe| {
+                        pe.deinit(allocator);
+                    }
+                    postgres_error = try processErrorResponse(self, reader, allocator);
+                    if (postgres_error) |err| {
+                        if (err.severity) |severity| {
+                            std.debug.print("Error Severity: {s}\n", .{severity});
+                        }
+                        if (err.message) |message| {
+                            std.debug.print("Error Message: {s}\n", .{message});
+                        }
+                    }
+                    continue;
+                },
+                else => {
+                    std.debug.print("Unexpected response type: {}\n", .{response_type});
+                    return error.ProtocolError;
+                },
+            }
+        }
+    }
+
+    // Process INSERT/UPDATE/DELETE responses for both simple and extended queries
     pub fn processCommandResponses(self: *Protocol) !u64 {
         const allocator = self.allocator;
         var buffer: [4096]u8 = undefined;
@@ -140,8 +292,27 @@ pub const Protocol = struct {
 
             switch (response_type) {
                 .RowDescription, .DataRow => {
-                    // ignore, even if it will arrive here.
-                    // TODO: keep this empty section here for future improvement.
+                    // Ignore for command responses (relevant for SELECT, not INSERT/UPDATE/DELETE)
+                },
+                .BindComplete => {
+                    // Extended query: Bind step completed
+                    continue;
+                },
+                .ParseComplete => {
+                    // Extended query: Parse step completed
+                    continue;
+                },
+                .ParameterDescription => {
+                    // Extended query: Describes parameter types, skip for command responses
+                    _ = try reader.readInt(i16, .big); // Number of parameters
+                    while (fbs.pos < msg_len - 5) {
+                        _ = try reader.readInt(i32, .big); // Skip OIDs
+                    }
+                    continue;
+                },
+                .NoData => {
+                    // Extended query: No result set (e.g., for UPDATE after Describe)
+                    continue;
                 },
                 .CommandComplete => {
                     if (error_encountered) {
@@ -151,11 +322,8 @@ pub const Protocol = struct {
                     const command_tag = try reader.readUntilDelimiterAlloc(allocator, 0, 1024);
                     defer allocator.free(command_tag);
 
-                    // Handle different command tag formats
                     if (std.mem.startsWith(u8, command_tag, "INSERT")) {
-                        // For INSERT, look for the last number
                         const last_space_idx = std.mem.lastIndexOfScalar(u8, command_tag, ' ') orelse {
-                            // If no space found, default to 0
                             return_value = 0;
                             continue;
                         };
@@ -166,7 +334,6 @@ pub const Protocol = struct {
                             continue;
                         };
                     } else if (std.mem.indexOfScalar(u8, command_tag, ' ')) |space_idx| {
-                        // Generic approach for other commands with a space
                         const count_str = command_tag[space_idx + 1 ..];
                         return_value = std.fmt.parseInt(u64, count_str, 10) catch |err| {
                             std.debug.print("Failed to parse count from: {s}, error: {}\n", .{ count_str, err });
@@ -174,7 +341,6 @@ pub const Protocol = struct {
                             continue;
                         };
                     } else {
-                        // No number found
                         return_value = 0;
                     }
                 },
@@ -182,21 +348,14 @@ pub const Protocol = struct {
                     if (postgres_error) |*pe| {
                         pe.deinit(allocator);
                     }
-                    // ReadyForQuery - transaction complete
                     return return_value;
                 },
                 .ErrorResponse => {
-                    // Collect error details but continue processing
                     error_encountered = true;
-
-                    // Free any previous error
                     if (postgres_error) |*pe| {
                         pe.deinit(allocator);
                     }
-
                     postgres_error = try processErrorResponse(self, reader, allocator);
-
-                    // Log or handle the error
                     if (postgres_error) |err| {
                         if (err.severity) |severity| {
                             std.debug.print("Error Severity: {s}\n", .{severity});
@@ -205,24 +364,18 @@ pub const Protocol = struct {
                             std.debug.print("Error Message: {s}\n", .{message});
                         }
                     }
-
-                    // Continue processing to reach ReadyForQuery
                     continue;
                 },
                 .NoticeResponse => {
                     var notice = try processNoticeResponse(self, reader, allocator);
                     defer notice.deinit(allocator);
-
-                    // Log or handle the notice
                     if (notice.message) |message| {
                         std.debug.print("Notice: {s}\n", .{message});
                     }
-
-                    // Continue processing
                     continue;
                 },
                 else => {
-                    std.debug.print("Unexpected response type: {}", .{response_type});
+                    std.debug.print("Unexpected response type: {}\n", .{response_type});
                     return error.ProtocolError;
                 },
             }

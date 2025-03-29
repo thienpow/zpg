@@ -125,6 +125,17 @@ pub fn parseArrayElements(
     return *pos;
 }
 
+fn fillDefaultValue(comptime T: type, default: T) T {
+    const type_info = @typeInfo(T);
+    return switch (type_info) {
+        .int, .float, .bool => default, // Use provided default for all scalars
+        .pointer => if (type_info.pointer.size == .slice) default else @compileError("Unsupported pointer type"),
+        .array => fillDefaultArray(T, type_info.array, default),
+        .optional => null,
+        else => @compileError("Unsupported type for default value: " ++ @typeName(T)),
+    };
+}
+
 fn fillDefaultArray(comptime T: type, info: std.builtin.Type.Array, default: anytype) T {
     var result: T = undefined;
     const child_info = @typeInfo(info.child);
@@ -136,22 +147,70 @@ fn fillDefaultArray(comptime T: type, info: std.builtin.Type.Array, default: any
         if (info.child == u8) {
             @memset(result[0..info.len], ' '); // Pad CHAR(n) with spaces
         } else {
-            @memset(result[0..info.len], default); // Use default for other types
+            for (0..info.len) |i| {
+                result[i] = default; // Properly set each element for multi-byte types
+            }
         }
     }
     return result;
 }
 
-fn fillDefaultValue(comptime T: type, default: T) T {
-    const type_info = @typeInfo(T);
-    return switch (type_info) {
-        .int, .float => default,
-        .bool => false,
-        .pointer => if (type_info.pointer.size == .slice) "" else @compileError("Unsupported pointer type"),
-        .array => fillDefaultArray(T, type_info.array, default),
-        .optional => null,
-        else => @compileError("Unsupported type for default value: " ++ @typeName(T)),
-    };
+pub fn parseArrayElementsEx(
+    allocator: std.mem.Allocator,
+    reader: std.io.AnyReader,
+    comptime ElementType: type,
+    ndims: i32,
+    dims: []const i32,
+    has_null: bool,
+) !ElementType {
+    const element_type_info = @typeInfo(ElementType);
+
+    if (ndims == 0) {
+        // Base case: scalar element
+        const elem_len = try reader.readInt(i32, .big);
+        if (elem_len < 0) {
+            if (has_null) return fillDefaultValue(ElementType, @as(ElementType, 0));
+            return error.UnexpectedNull;
+        }
+        const elem_reader = std.io.limitedReader(reader, @intCast(elem_len)).reader().any();
+        return try readValueForTypeEx(allocator, elem_reader, ElementType);
+    }
+
+    // Recursive case: array or slice
+    if (element_type_info != .array and element_type_info != .pointer) {
+        return error.InvalidArrayType;
+    }
+
+    const child_type = if (element_type_info == .array) element_type_info.array.child else element_type_info.pointer.child;
+    const dim = dims[0];
+    if (element_type_info == .array and dim != element_type_info.array.len) {
+        return error.ArrayLengthMismatch;
+    }
+
+    var elements = std.ArrayList(child_type).init(allocator);
+    defer elements.deinit();
+
+    // Recursively parse elements for this dimension
+    var i: usize = 0;
+    while (i < @as(usize, @intCast(dim))) : (i += 1) {
+        const nested_element = try parseArrayElementsEx(
+            allocator,
+            reader,
+            child_type,
+            ndims - 1,
+            dims[1..],
+            has_null,
+        );
+        try elements.append(nested_element);
+    }
+
+    if (element_type_info == .array) {
+        var result: ElementType = undefined;
+        @memcpy(result[0..element_type_info.array.len], elements.items[0..element_type_info.array.len]);
+        return result;
+    } else { // .pointer (slice)
+        return try elements.toOwnedSlice();
+    }
 }
 
 fn readPostgresText(allocator: std.mem.Allocator, reader: anytype, len: u64) ![]u8 {
@@ -170,16 +229,24 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
     return switch (@typeInfo(FieldType)) {
         .int => |info| {
             const len = try reader.readInt(i32, .big);
+
             if (len < 0) return 0;
             const bytes = try allocator.alloc(u8, @intCast(len));
             defer allocator.free(bytes);
-            const read = try reader.readAtLeast(bytes, @intCast(len));
-            if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
 
+            const read = try reader.readAtLeast(bytes, @intCast(len));
+
+            if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
             if (info.signedness == .unsigned) {
-                return std.fmt.parseUnsigned(FieldType, bytes[0..read], 10) catch return error.InvalidNumber;
+                return std.fmt.parseUnsigned(FieldType, bytes[0..read], 10) catch |err| {
+                    std.debug.print("Parse error: {}\n", .{err});
+                    return error.InvalidNumber;
+                };
             } else {
-                return std.fmt.parseInt(FieldType, bytes[0..read], 10) catch return error.InvalidNumber;
+                return std.fmt.parseInt(FieldType, bytes[0..read], 10) catch |err| {
+                    std.debug.print("Parse error: {}\n", .{err});
+                    return error.InvalidNumber;
+                };
             }
         },
         .float => {
@@ -461,4 +528,176 @@ fn parsePostgresText(comptime T: type, allocator: std.mem.Allocator, reader: any
     const bytes = try readPostgresText(allocator, reader, len);
     defer allocator.free(bytes);
     return try T.fromPostgresText(bytes, allocator);
+}
+
+pub fn readValueForTypeEx(allocator: std.mem.Allocator, reader: std.io.AnyReader, comptime FieldType: type) !FieldType {
+    const len = try reader.readInt(i32, .big);
+    if (len < 0) { // NULL value handling
+        return switch (@typeInfo(FieldType)) {
+            .optional => null,
+            .int => 0,
+            .float => 0.0,
+            .bool => false,
+            .pointer => |ptr| if (ptr.size == .slice and ptr.child == u8)
+                try allocator.alloc(u8, 0)
+            else
+                error.NullNotSupported,
+            .array => |arr| if (arr.child == u8)
+                fillDefaultArray(FieldType, arr, ' ')
+            else
+                fillDefaultArray(FieldType, arr, @as(arr.child, 0)),
+            .@"enum" => @as(FieldType, @enumFromInt(0)),
+            else => error.NullNotSupported,
+        };
+    }
+
+    return switch (@typeInfo(FieldType)) {
+        .int => |info| switch (info.bits) {
+            16 => if (len == 2) switch (info.signedness) {
+                .signed => try reader.readInt(i16, .big),
+                .unsigned => @intCast(try reader.readInt(u16, .big)),
+            } else return error.InvalidLength,
+            32 => if (len == 4) switch (info.signedness) {
+                .signed => try reader.readInt(i32, .big),
+                .unsigned => @intCast(try reader.readInt(u32, .big)),
+            } else return error.InvalidLength,
+            64 => if (len == 8) switch (info.signedness) {
+                .signed => try reader.readInt(i64, .big),
+                .unsigned => @intCast(try reader.readInt(u64, .big)),
+            } else return error.InvalidLength,
+            else => return error.UnsupportedIntSize,
+        },
+        .float => switch (@typeInfo(FieldType).float.bits) {
+            32 => if (len == 4) @bitCast(try reader.readInt(u32, .big)) else return error.InvalidLength,
+            64 => if (len == 8) @bitCast(try reader.readInt(u64, .big)) else return error.InvalidLength,
+            else => return error.UnsupportedFloatSize,
+        },
+        .bool => if (len == 1) (try reader.readByte() != 0) else return error.InvalidLength,
+        .pointer => |ptr| if (ptr.size == .slice and ptr.child == u8) blk: {
+            const bytes = try allocator.alloc(u8, @intCast(len));
+            errdefer allocator.free(bytes);
+            const read = try reader.readAtLeast(bytes, @intCast(len));
+            if (read < @as(usize, @intCast(len))) {
+                allocator.free(bytes);
+                return error.IncompleteRead;
+            }
+            break :blk bytes;
+        } else @compileError("Unsupported pointer type: " ++ @typeName(FieldType)),
+        .@"enum" => {
+            if (len != 4) return error.InvalidLength; // Enums are typically sent as int32 in Postgres binary
+            const val = try reader.readInt(i32, .big);
+            return std.meta.intToEnum(FieldType, val) catch return error.InvalidEnum;
+        },
+        .array => |array_info| blk: {
+            if (array_info.child == u8) { // CHAR(n)
+                if (len > array_info.len) return error.StringTooLong;
+                var result: FieldType = undefined;
+                const read = try reader.readAtLeast(result[0..array_info.len], @intCast(len));
+                if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
+                @memset(result[read..array_info.len], ' ');
+                break :blk result;
+            } else {
+                if (len < 12) return error.InvalidArrayFormat;
+                const bytes = try allocator.alloc(u8, @intCast(len));
+                defer allocator.free(bytes);
+                const read = try reader.readAtLeast(bytes, @intCast(len));
+                if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
+
+                var stream = std.io.fixedBufferStream(bytes);
+                const r = stream.reader().any();
+                const ndims = try r.readInt(i32, .big);
+                const has_null = try r.readInt(i32, .big) != 0;
+                const oid = try r.readInt(i32, .big);
+                _ = oid;
+
+                // Read dimensions
+                const dims: []i32 = try allocator.alloc(i32, @intCast(ndims));
+                defer allocator.free(dims);
+                for (dims) |*dim| {
+                    dim.* = try r.readInt(i32, .big);
+                }
+                // Skip lower bounds (assume 1-based for simplicity)
+                for (0..@intCast(ndims)) |_| {
+                    _ = try r.readInt(i32, .big);
+                }
+
+                // Parse elements recursively
+                const result = try parseArrayElementsEx(allocator, r, FieldType, ndims, dims, has_null);
+                break :blk result;
+            }
+        },
+        .optional => |opt_info| blk: {
+            const len_u64 = @as(u64, @intCast(len));
+            var limitedReader = std.io.limitedReader(reader, len_u64);
+            const value = try readValueForTypeEx(allocator, limitedReader.reader().any(), opt_info.child);
+            var remaining_buffer: [1]u8 = undefined;
+            const bytes_left = try limitedReader.reader().read(&remaining_buffer);
+            if (bytes_left > 0) return error.UnexpectedData;
+            break :blk value;
+        },
+        .@"struct" => {
+            const bytes = try allocator.alloc(u8, @intCast(len));
+            defer allocator.free(bytes);
+            const read = try reader.readAtLeast(bytes, @intCast(len));
+            if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
+
+            if (@hasDecl(FieldType, "isSerial") and FieldType.isSerial) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidSerial;
+            } else if (@hasDecl(FieldType, "isVarchar") and FieldType.isVarchar) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidVARCHAR;
+            } else if (FieldType == Decimal) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidDecimalType;
+            } else if (FieldType == Money) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidMoneyType;
+            } else if (FieldType == Uuid) {
+                return FieldType.fromPostgresBinary(bytes[0..read]) catch return error.InvalidUuid;
+            } else if (FieldType == Timestamp) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidTimestamp;
+            } else if (FieldType == Interval) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidInterval;
+            } else if (FieldType == Date) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidDate;
+            } else if (FieldType == Time) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidTime;
+            } else if (FieldType == TSVector) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidTSVector;
+            } else if (FieldType == TSQuery) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidTSQuery;
+            } else if (FieldType == CIDR) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidCIDR;
+            } else if (FieldType == Inet) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidInet;
+            } else if (FieldType == MACAddress) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidMACAddress;
+            } else if (FieldType == MACAddress8) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidMACAddress8;
+            } else if (FieldType == Bit10) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidBit10;
+            } else if (FieldType == VarBit16) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidVarBit16;
+            } else if (FieldType == Box) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidBox;
+            } else if (FieldType == Circle) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidCircle;
+            } else if (FieldType == Line) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidLine;
+            } else if (FieldType == LineSegment) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidLineSegment;
+            } else if (FieldType == Path) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidPath;
+            } else if (FieldType == Point) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidPoint;
+            } else if (FieldType == Polygon) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidPolygon;
+            } else if (FieldType == JSON) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidJSON;
+            } else if (FieldType == JSONB) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidJSONB;
+            } else if (@hasDecl(FieldType, "fromPostgresBinary")) {
+                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidCustomType;
+            }
+            @compileError("Unsupported struct type: " ++ @typeName(FieldType));
+        },
+        else => @compileError("Unsupported field type: " ++ @typeName(FieldType)),
+    };
 }

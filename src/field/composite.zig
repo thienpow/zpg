@@ -7,6 +7,48 @@ pub fn Composite(comptime Fields: type) type {
 
         const Self = @This();
 
+        pub fn fromPostgresBinary(comptime F: type, data: []const u8, allocator: std.mem.Allocator) !Composite(Fields) {
+            var stream = std.io.fixedBufferStream(data);
+            var reader = stream.reader();
+
+            const num_fields = try reader.readIntBig(u32);
+            if (num_fields != std.meta.fields(F).len) return error.InvalidFieldCount;
+
+            var result: Fields = undefined;
+
+            inline for (std.meta.fields(Fields)) |field| {
+                _ = try reader.readIntBig(u32); // Read OID (not used here)
+                const field_len = try reader.readIntBig(i32);
+
+                if (field_len == -1) {
+                    // NULL field
+                    @field(result, field.name) = if (@typeInfo(field.type) == .optional) null else return error.NullNotAllowed;
+                } else {
+                    if (@typeInfo(field.type) == .optional) {
+                        const Child = @typeInfo(field.type).optional.child;
+                        const field_data = try reader.readBytes(@intCast(field_len));
+                        @field(result, field.name) = try parseBinaryField(Child, field_data, allocator);
+                    } else {
+                        const field_data = try reader.readBytes(@intCast(field_len));
+                        @field(result, field.name) = try parseBinaryField(field.type, field_data, allocator);
+                    }
+                }
+            }
+
+            return Composite(Fields){ .fields = result };
+        }
+
+        fn parseBinaryField(comptime T: type, data: []const u8, allocator: std.mem.Allocator) !T {
+            return switch (@typeInfo(T)) {
+                .pointer => |ptr| if (ptr.size == .slice and ptr.child == u8) {
+                    return try allocator.dupe(u8, data);
+                } else @compileError("Unsupported pointer type"),
+                .int => std.mem.bytesToValue(T, data),
+                .bool => data[0] != 0,
+                else => @compileError("Unsupported field type: " ++ @typeName(T)),
+            };
+        }
+
         pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Self {
             if (text.len < 2 or text[0] != '(' or text[text.len - 1] != ')') return error.InvalidCompositeFormat;
             const fields_str = text[1 .. text.len - 1];

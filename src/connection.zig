@@ -112,6 +112,14 @@ pub const Connection = struct {
         return self.state == .Connected;
     }
 
+    pub fn sendMessageRaw(self: *Connection, buffer: []const u8) !void {
+        if (self.tls_client) |*tls_client| {
+            try tls_client.writeAll(self.stream, buffer);
+        } else {
+            try self.stream.writeAll(buffer);
+        }
+    }
+
     pub fn sendMessage(self: *Connection, request_type: u8, payload: []const u8, append_null: bool) !void {
         var buffer = std.ArrayList(u8).init(self.allocator);
         defer buffer.deinit();

@@ -42,6 +42,13 @@ pub const ResponseType = enum(u8) {
     CopyData = 'd',
     CopyDone = 'c',
     EmptyQueryResponse = 'I',
+    ParameterDescription = 't',
+    PortalSuspended = 's', // Added for partial execution
+    NoData = 'n', // Added for non-row-returning statements
+    CloseComplete = '3', // Added for future Close support
+    // FunctionCallResponse = 'V', // Optional, if you add function calls
+    // NegotiateProtocolVersion = 'v', // Optional, if protocol negotiation
+    _, // Catch-all for unhandled types
 };
 
 pub const ConnectionState = enum {

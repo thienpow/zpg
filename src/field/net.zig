@@ -6,6 +6,29 @@ pub const CIDR = struct {
     mask: u8, // Subnet mask (0-32 for IPv4, 0-128 for IPv6)
     is_ipv6: bool, // True for IPv6, false for IPv4
 
+    pub fn fromPostgresBinary(data: []const u8) !CIDR {
+        if (data.len < 4) return error.InvalidCIDRBinaryFormat;
+
+        const family = data[0];
+        const mask = data[1];
+        const addr_len = data[2];
+
+        var address: [16]u8 = undefined;
+        @memset(&address, 0); // Zero out to handle IPv4 in a 16-byte buffer
+
+        if (family == 2) { // IPv4
+            if (addr_len != 4 or mask > 32) return error.InvalidCIDRBinaryFormat;
+            @memcpy(address[0..4], data[3..7]);
+            return CIDR{ .address = address, .mask = mask, .is_ipv6 = false };
+        } else if (family == 3) { // IPv6
+            if (addr_len != 16 or mask > 128) return error.InvalidCIDRBinaryFormat;
+            @memcpy(address[0..16], data[3..19]);
+            return CIDR{ .address = address, .mask = mask, .is_ipv6 = true };
+        } else {
+            return error.UnknownCIDRFamily;
+        }
+    }
+
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !CIDR {
         _ = allocator; // Included for consistency
         const slash_pos = std.mem.indexOf(u8, text, "/") orelse return error.InvalidCIDRFormat;
@@ -44,6 +67,29 @@ pub const Inet = struct {
     address: [16]u8, // IPv4 (4 bytes) or IPv6 (16 bytes)
     mask: u8, // Subnet mask (0-32 for IPv4, 0-128 for IPv6), 255 if not specified
     is_ipv6: bool, // True for IPv6, false for IPv4
+
+    pub fn fromPostgresBinary(data: []const u8) !Inet {
+        if (data.len < 4) return error.InvalidInetBinaryFormat;
+
+        const family = data[0];
+        const mask = data[1];
+        const addr_len = data[2];
+
+        var address: [16]u8 = undefined;
+        @memset(&address, 0); // Zero out unused bytes for IPv4
+
+        if (family == 2) { // IPv4
+            if (addr_len != 4 or mask > 32) return error.InvalidInetBinaryFormat;
+            @memcpy(address[0..4], data[3..7]);
+            return Inet{ .address = address, .mask = mask, .is_ipv6 = false };
+        } else if (family == 3) { // IPv6
+            if (addr_len != 16 or mask > 128) return error.InvalidInetBinaryFormat;
+            @memcpy(address[0..16], data[3..19]);
+            return Inet{ .address = address, .mask = mask, .is_ipv6 = true };
+        } else {
+            return error.UnknownInetFamily;
+        }
+    }
 
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Inet {
         _ = allocator;
@@ -88,6 +134,15 @@ pub const Inet = struct {
 pub const MACAddress = struct {
     bytes: [6]u8,
 
+    pub fn fromPostgresBinary(data: []const u8) !MACAddress {
+        if (data.len != 6) return error.InvalidMACBinaryFormat;
+
+        var bytes: [6]u8 = undefined;
+        @memcpy(&bytes, data[0..6]);
+
+        return MACAddress{ .bytes = bytes };
+    }
+
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !MACAddress {
         _ = allocator;
         var bytes: [6]u8 = undefined;
@@ -116,6 +171,15 @@ pub const MACAddress = struct {
 pub const MACAddress8 = struct {
     bytes: [8]u8,
 
+    pub fn fromPostgresBinary(data: []const u8) !MACAddress8 {
+        if (data.len != 8) return error.InvalidMAC8BinaryFormat;
+
+        var bytes: [8]u8 = undefined;
+        @memcpy(&bytes, data[0..8]);
+
+        return MACAddress8{ .bytes = bytes };
+    }
+
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !MACAddress8 {
         _ = allocator;
         var bytes: [8]u8 = undefined;
@@ -141,16 +205,28 @@ pub const MACAddress8 = struct {
 };
 
 // Helper functions for IP parsing and formatting
+// fn parseIPv4(text: []const u8, address: *[16]u8) !void {
+//     var iter = std.mem.splitScalar(u8, text, '.');
+//     var i: usize = 0;
+//     while (iter.next()) |octet| {
+//         if (i >= 4) return error.InvalidIPv4Format;
+//         address[i] = try std.fmt.parseInt(u8, octet, 10);
+//         i += 1;
+//     }
+//     if (i != 4) return error.InvalidIPv4Format;
+//     @memset(address[4..], 0);
+// }
 fn parseIPv4(text: []const u8, address: *[16]u8) !void {
+    @memset(address, 0); // Zero out the full address
     var iter = std.mem.splitScalar(u8, text, '.');
     var i: usize = 0;
+
     while (iter.next()) |octet| {
         if (i >= 4) return error.InvalidIPv4Format;
         address[i] = try std.fmt.parseInt(u8, octet, 10);
         i += 1;
     }
     if (i != 4) return error.InvalidIPv4Format;
-    @memset(address[4..], 0);
 }
 
 fn parseIPv6(text: []const u8, address: *[16]u8) !void {

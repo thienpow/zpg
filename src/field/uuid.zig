@@ -4,6 +4,15 @@ pub const Uuid = struct {
     bytes: [16]u8,
     pub const isUuid = true;
 
+    pub fn fromPostgresBinary(data: []const u8) !Uuid {
+        if (data.len != 16) return error.InvalidBinaryUuid;
+
+        var uuid: Uuid = undefined;
+        @memcpy(&uuid.bytes, data);
+
+        return uuid;
+    }
+
     pub fn fromPostgresText(str: []const u8) !Uuid {
         var uuid: Uuid = undefined;
 

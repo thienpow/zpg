@@ -121,6 +121,15 @@ test "Text Search Types" {
             try std.testing.expectEqual(@as(u16, 2), multi.tsv_col.lexemes[3].positions.?[1]);
             try std.testing.expectEqual(@as(u8, 'A'), multi.tsv_col.lexemes[3].weight.?);
 
+            std.debug.print("multi.tsq_col.nodes: {}\n", .{multi.tsq_col.nodes.len});
+            for (multi.tsq_col.nodes, 0..) |node, i| {
+                switch (node) {
+                    inline else => |active| {
+                        std.debug.print("Node {}: {any}\n", .{ i, active });
+                    },
+                }
+            }
+
             try std.testing.expectEqual(@as(usize, 3), multi.tsq_col.nodes.len); // Should be 3: super, <, 1
             try std.testing.expectEqualStrings("super", multi.tsq_col.nodes[0].term.word);
             try std.testing.expectEqual('<', multi.tsq_col.nodes[1].operator);

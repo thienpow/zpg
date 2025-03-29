@@ -113,7 +113,6 @@ pub const Query = struct {
     /// the extended query protocol. The function returns the result of the execution based on the
     /// type of the prepared statement (SELECT, INSERT, UPDATE, DELETE, or other).
     pub fn execute(self: *Query, name: []const u8, params: ?[]const Param, comptime T: type) !Result(T) {
-        // Fast path: Use simple query protocol with EXECUTE statement
         if (params) |p| {
             var buffer = std.ArrayList(u8).init(self.allocator);
             defer buffer.deinit();
@@ -135,7 +134,7 @@ pub const Query = struct {
         } else {
             const protocol = &self.protocol;
             // Slow path: Use extended query protocol for NULL params
-            try protocol.sendBindMessage(name, params);
+            try protocol.sendBind(name, params);
             try self.conn.sendMessage(@intFromEnum(RequestType.Execute), &[_]u8{ 0, 0, 0, 0, 0 }, false);
             try self.conn.sendMessage(@intFromEnum(RequestType.Sync), "", false);
 

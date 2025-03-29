@@ -6,6 +6,18 @@ pub const Timestamp = struct {
 
     const days_in_month = [_]u8{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
 
+    pub fn fromPostgresBinary(data: []const u8) !Timestamp {
+        if (data.len != 8) return error.InvalidBinaryTimestamp;
+
+        const postgres_epoch: i64 = 946684800; // Seconds from Unix epoch to 2000-01-01
+        const microseconds = std.mem.readInt(i64, data, .big);
+
+        return Timestamp{
+            .seconds = @divFloor(microseconds, 1_000_000) + postgres_epoch,
+            .nano_seconds = @intCast(@mod(microseconds, 1_000_000) * 1_000),
+        };
+    }
+
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Timestamp {
         _ = allocator;
         if (text.len < 19) return error.InvalidTimestampFormat;

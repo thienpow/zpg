@@ -6,6 +6,7 @@ const Condition = std.Thread.Condition;
 
 const Connection = @import("connection.zig").Connection;
 const Query = @import("query.zig").Query;
+const QueryEx = @import("queryEx.zig").QueryEx;
 const Config = @import("config.zig").Config;
 
 /// Possible error types for connection pool operations
@@ -342,5 +343,9 @@ pub const PooledConnection = struct {
 
     pub fn createQuery(self: *PooledConnection, allocator: Allocator) Query {
         return Query.init(allocator, self.conn);
+    }
+
+    pub fn createQueryEx(self: *PooledConnection, allocator: Allocator) QueryEx {
+        return QueryEx.init(allocator, self.conn);
     }
 };

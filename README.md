@@ -26,30 +26,12 @@ Learn how ZPG handles PostgreSQL’s advanced data types with our comprehensive 
 ### Planned Features
 For a full-fledged PostgreSQL driver, `zpg` could be extended to include:
 
-- ~~Support for array types~~ considered done?...
-- Support for JSON/JSONB
-- Support for network types (`inet`, `cidr`)
-- Binary format support for more efficient data transfers
 - Hook to Streaming Response
 
 These enhancements aim to broaden `zpg`’s compatibility with PostgreSQL’s rich type system and optimize performance.
 
+
 ## Strengths of `zpg`
-
-** Disclaimer: below is what LLMs reviewed :p
-
-### **Minimal Overhead Compared to ORMs**
-- ORMs like Prisma, SQLAlchemy, or Sequelize introduce extra layers (query builders, model abstraction, caching).
-- `zpg` avoids unnecessary parsing, data cloning, and object instantiation, making it much faster and memory-efficient.
-- With **struct-based queries**, you map results directly to Zig structs without ORM's dynamic reflection overhead.
-
-### **Better than Regular PostgreSQL Clients in Performance & Safety**
-- Compared to **libpq** (C-based PostgreSQL client):
-  - **Lower memory fragmentation** (Zig’s allocator control helps).
-  - **More explicit type safety** (avoids runtime surprises).
-- Compared to **async Rust clients (tokio-postgres, sqlx)**:
-  - **More deterministic memory management** (no GC, less heap allocation).
-  - **No need for runtime introspection** (column metadata is mapped statically).
 
 ### **Struct-Based Query Execution**
 - Unlike clients that return generic tuples or `[]anytype`, `zpg` directly maps results to predefined Zig structs.
@@ -76,11 +58,14 @@ These enhancements aim to broaden `zpg`’s compatibility with PostgreSQL’s ri
 
 ## **Potential Improvements for `zpg`**
 
-1. **Support for Asynchronous Queries**
+1.  Binary protocol hit bottlenect at Bind(fast) --> postgres(delay 40ms) --> BindComplete
+2.  Potential fragility with large messages due to fixed buffers.
+
+3. **Support for Asynchronous Queries**
    - Right now, `zpg` executes queries synchronously.
    - Adding **async** (event-driven I/O) would allow non-blocking DB operations (like `tokio-postgres` in Rust).
 
-2. **Automatic Struct Mapping for Complex Queries**
+4. **Automatic Struct Mapping for Complex Queries**
    - Some queries return dynamic column sets (`JOIN` queries, custom views).
    - Right now, users must define exact structs manually.
    - Consider adding **auto-detection of column names** based on PostgreSQL metadata.

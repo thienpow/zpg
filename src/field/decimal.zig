@@ -4,6 +4,45 @@ pub const Decimal = struct {
     value: i128, // Increased precision
     scale: u8,
 
+    pub fn fromPostgresBinary(data: []const u8, _: std.mem.Allocator) !Decimal {
+        if (data.len < 4) return error.InvalidDecimalFormat;
+
+        // Read number of digits (2 bytes, big-endian)
+        var num_digits: i16 = @bitCast(std.mem.bytesToValue(i16, data[0..2]));
+        num_digits = @byteSwap(num_digits);
+
+        // Read scale (2 bytes, big-endian)
+        var scale: i16 = @bitCast(std.mem.bytesToValue(i16, data[2..4]));
+        scale = @byteSwap(scale);
+
+        if (num_digits < 0 or scale < 0 or scale > 38) return error.InvalidDecimalFormat;
+
+        // Read digits (each digit is stored as an i16, big-endian, base-10000)
+        var value: i128 = 0;
+        const base: i128 = 10_000;
+        var is_negative = false;
+
+        for (0..@as(usize, @intCast(num_digits))) |i| {
+            const offset = 4 + (i * 2);
+            if (offset + 2 > data.len) return error.InvalidDecimalFormat;
+
+            var digit: i16 = @bitCast(std.mem.bytesToValue(i16, data[offset .. offset + 2]));
+            digit = @byteSwap(digit);
+
+            if (i == 0 and digit < 0) {
+                is_negative = true;
+                digit = -digit;
+            }
+
+            value = value * base + @as(i128, digit);
+        }
+
+        return Decimal{
+            .value = if (is_negative) -value else value,
+            .scale = @intCast(scale),
+        };
+    }
+
     pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Decimal {
         const decimal_point_pos = std.mem.indexOf(u8, text, ".");
 

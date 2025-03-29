@@ -11,6 +11,20 @@ pub fn parsePrepareStatementName(sql: []const u8) ![]const u8 {
     return after_prepare[0..name_end];
 }
 
+pub fn parseExtendedStatementCommand(sql: []const u8) !CommandType {
+    const trimmed = std.mem.trim(u8, sql, " \t\n");
+    const upper = trimmed[0..@min(trimmed.len, 10)];
+    const command_type = types.getCommandType(upper);
+
+    switch (command_type) {
+        .Select, .Insert, .Update, .Delete => return command_type,
+        else => {
+            std.debug.print("\x1b[31mError\x1b[0m: Unsupported command '{s}' in extended statement. Only SELECT, INSERT, UPDATE, and DELETE are allowed.\n", .{@tagName(command_type)});
+            return error.UnsupportedPrepareCommand;
+        },
+    }
+}
+
 // Parse the command type from PREPARE
 pub fn parsePrepareStatementCommand(sql: []const u8) !CommandType {
     const trimmed = std.mem.trim(u8, sql, " \t\n");

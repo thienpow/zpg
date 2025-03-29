@@ -16,6 +16,14 @@ pub fn SERIAL(comptime IntType: type) type {
             return .{ .value = value };
         }
 
+        pub fn fromPostgresBinary(comptime T: type, data: []const u8) !SERIAL(IntType) {
+            if (data.len != @sizeOf(T)) return error.InvalidBinarySerial;
+
+            const value: IntType = @bitCast(std.mem.bytesToValue(IntType, data));
+
+            return SERIAL(IntType){ .value = std.mem.bigToNative(value) };
+        }
+
         // Parse from PostgreSQL text format (e.g., "12345")
         pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Self {
             _ = allocator; // Unused here, but included for consistency with Decimal/Money
