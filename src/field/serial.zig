@@ -16,19 +16,23 @@ pub fn SERIAL(comptime IntType: type) type {
             return .{ .value = value };
         }
 
-        pub fn fromPostgresBinary(comptime T: type, data: []const u8) !SERIAL(IntType) {
-            if (data.len != @sizeOf(T)) return error.InvalidBinarySerial;
+        pub fn fromPostgresBinary(data: []const u8) !SERIAL(IntType) {
+            if (data.len != @sizeOf(IntType)) return error.InvalidBinarySerial;
 
-            const value: IntType = @bitCast(std.mem.bytesToValue(IntType, data));
+            const value = switch (IntType) {
+                u16 => std.mem.readInt(u16, data[0..2], .big),
+                u32 => std.mem.readInt(u32, data[0..4], .big),
+                u64 => std.mem.readInt(u64, data[0..8], .big),
+                else => unreachable, // Enforced by type check at comptime
+            };
 
-            return SERIAL(IntType){ .value = std.mem.bigToNative(value) };
+            if (value == 0) return error.InvalidSerialValue;
+            return SERIAL(IntType){ .value = value };
         }
 
         // Parse from PostgreSQL text format (e.g., "12345")
-        pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Self {
-            _ = allocator; // Unused here, but included for consistency with Decimal/Money
+        pub fn fromPostgresText(text: []const u8) !Self {
             const value = try std.fmt.parseUnsigned(IntType, text, 10);
-            // Optionally enforce serial constraints (e.g., value > 0)
             if (value == 0) return error.InvalidSerialValue; // Serials start at 1
             return Self{ .value = value };
         }

@@ -29,8 +29,7 @@ pub const CIDR = struct {
         }
     }
 
-    pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !CIDR {
-        _ = allocator; // Included for consistency
+    pub fn fromPostgresText(text: []const u8) !CIDR {
         const slash_pos = std.mem.indexOf(u8, text, "/") orelse return error.InvalidCIDRFormat;
         const addr_str = text[0..slash_pos];
         const mask = try std.fmt.parseInt(u8, text[slash_pos + 1 ..], 10);
@@ -91,8 +90,7 @@ pub const Inet = struct {
         }
     }
 
-    pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Inet {
-        _ = allocator;
+    pub fn fromPostgresText(text: []const u8) !Inet {
         const slash_pos = std.mem.indexOf(u8, text, "/");
         const addr_str = if (slash_pos) |pos| text[0..pos] else text;
         const mask = if (slash_pos) |pos| try std.fmt.parseInt(u8, text[pos + 1 ..], 10) else @as(u8, 255);
@@ -143,8 +141,7 @@ pub const MACAddress = struct {
         return MACAddress{ .bytes = bytes };
     }
 
-    pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !MACAddress {
-        _ = allocator;
+    pub fn fromPostgresText(text: []const u8) !MACAddress {
         var bytes: [6]u8 = undefined;
         var iter = std.mem.splitScalar(u8, text, ':');
         var i: usize = 0;
@@ -180,8 +177,7 @@ pub const MACAddress8 = struct {
         return MACAddress8{ .bytes = bytes };
     }
 
-    pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !MACAddress8 {
-        _ = allocator;
+    pub fn fromPostgresText(text: []const u8) !MACAddress8 {
         var bytes: [8]u8 = undefined;
         var iter = std.mem.splitScalar(u8, text, ':');
         var i: usize = 0;

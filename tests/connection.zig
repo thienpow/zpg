@@ -16,7 +16,7 @@ test "Connection initialization failure with invalid host" {
     const conn = Connection.init(allocator, config);
     //defer conn.deinit();
 
-    try std.testing.expectError(zpg.Error.TemporaryNameServerFailure, conn);
+    try std.testing.expectError(error.TemporaryNameServerFailure, conn);
 }
 
 test "Connection success" {

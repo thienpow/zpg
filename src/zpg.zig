@@ -12,6 +12,3 @@ pub const Param = @import("param.zig").Param;
 
 pub const types = @import("types.zig");
 pub const field = @import("field/mod.zig");
-
-/// The primary error set for the PostgreSQL client library.
-pub const Error = types.Error;

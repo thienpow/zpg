@@ -172,7 +172,7 @@ pub const Protocol = struct {
         }
     }
 
-    pub fn processSelectResponses(self: *Protocol, comptime T: type) !?[]T {
+    pub fn processSelectResponses(self: *Protocol, comptime T: type, is_extended_query: bool) !?[]T {
         const allocator = self.allocator;
         var buffer: [4096]u8 = undefined;
 
@@ -190,20 +190,16 @@ pub const Protocol = struct {
         var column_formats: ?[]i16 = null;
         defer if (column_formats) |cf| allocator.free(cf);
 
-        var is_extended_query = false;
-
         while (true) {
             const result = try self.conn.readMessageType(&buffer);
-            std.debug.print("Raw type byte: {d} ('{c}')\n", .{ result.type, result.type });
             const response_type: ResponseType = @enumFromInt(result.type);
-            std.debug.print("Received response_type: {}\n", .{response_type});
             const msg_len = result.len;
             var fbs = std.io.fixedBufferStream(buffer[5..msg_len]);
             const reader = fbs.reader().any();
 
             switch (response_type) {
                 .BindComplete => {
-                    is_extended_query = true;
+                    //
                 },
                 .ParameterDescription => {},
                 .RowDescription => {
@@ -216,7 +212,6 @@ pub const Protocol = struct {
                         defer allocator.free(name);
                         try reader.skipBytes(16, .{}); // OID (4), attr (2), type OID (4), size (2), modifier (4)
                         column_formats.?[i] = try reader.readInt(i16, .big);
-                        std.debug.print("Column {d}: name={s}, format={}\n", .{ i, name, column_formats.?[i] });
                     }
                 },
                 .DataRow => {

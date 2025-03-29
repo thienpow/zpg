@@ -5,9 +5,7 @@ pub const Interval = struct {
     days: i32,
     microseconds: i64,
 
-    pub fn fromPostgresBinary(data: []const u8, allocator: std.mem.Allocator) !Interval {
-        _ = allocator; // Unused
-
+    pub fn fromPostgresBinary(data: []const u8) !Interval {
         if (data.len != 16) return error.InvalidIntervalFormat;
 
         return Interval{
@@ -17,8 +15,7 @@ pub const Interval = struct {
         };
     }
 
-    pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Interval {
-        _ = allocator;
+    pub fn fromPostgresText(text: []const u8) !Interval {
         var interval = Interval{ .months = 0, .days = 0, .microseconds = 0 };
 
         // Check if it's in HH:MM:SS format

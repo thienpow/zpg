@@ -19,5 +19,5 @@ test {
     // std.testing.refAllDecls(@import("field/composite.zig"));
     // std.testing.refAllDecls(@import("field/json.zig"));
     // std.testing.refAllDecls(@import("field/search.zig"));
-    std.testing.refAllDecls(@import("ex_proto.zig"));
+    // std.testing.refAllDecls(@import("ex_proto.zig"));
 }

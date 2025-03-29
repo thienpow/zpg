@@ -7,29 +7,34 @@ pub fn Composite(comptime Fields: type) type {
 
         const Self = @This();
 
+        pub const isComposite = true;
+
         pub fn fromPostgresBinary(comptime F: type, data: []const u8, allocator: std.mem.Allocator) !Composite(Fields) {
             var stream = std.io.fixedBufferStream(data);
             var reader = stream.reader();
 
-            const num_fields = try reader.readIntBig(u32);
+            const num_fields = try reader.readInt(u32, .big);
             if (num_fields != std.meta.fields(F).len) return error.InvalidFieldCount;
 
             var result: Fields = undefined;
 
             inline for (std.meta.fields(Fields)) |field| {
-                _ = try reader.readIntBig(u32); // Read OID (not used here)
-                const field_len = try reader.readIntBig(i32);
+                _ = try reader.readInt(u32, .big); // Read OID (not used here)
+
+                const field_len = try reader.readInt(u32, .big);
 
                 if (field_len == -1) {
                     // NULL field
                     @field(result, field.name) = if (@typeInfo(field.type) == .optional) null else return error.NullNotAllowed;
                 } else {
+                    const field_data_buffer = try allocator.alloc(u8, @intCast(field_len));
+                    try reader.readNoEof(field_data_buffer);
+                    const field_data = field_data_buffer;
+
                     if (@typeInfo(field.type) == .optional) {
                         const Child = @typeInfo(field.type).optional.child;
-                        const field_data = try reader.readBytes(@intCast(field_len));
                         @field(result, field.name) = try parseBinaryField(Child, field_data, allocator);
                     } else {
-                        const field_data = try reader.readBytes(@intCast(field_len));
                         @field(result, field.name) = try parseBinaryField(field.type, field_data, allocator);
                     }
                 }

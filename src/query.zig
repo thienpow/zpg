@@ -23,6 +23,7 @@ pub const Query = struct {
     conn: *Connection,
     allocator: Allocator,
     protocol: Protocol,
+    is_extended_query: bool = false,
 
     pub fn init(allocator: Allocator, conn: *Connection) Query {
         return Query{
@@ -145,7 +146,7 @@ pub const Query = struct {
                         if (type_info != .@"struct") {
                             @compileError("EXECUTE for SELECT requires T to be a struct");
                         }
-                        const rows = (try protocol.processSelectResponses(T)) orelse &[_]T{};
+                        const rows = (try protocol.processSelectResponses(T, self.is_extended_query)) orelse &[_]T{};
                         return Result(T){ .select = rows };
                     },
                     .Insert, .Update, .Delete => {
@@ -176,7 +177,7 @@ pub const Query = struct {
 
         return switch (cmd_type) {
             .Select => Result(T){
-                .select = (try protocol.processSelectResponses(T)) orelse &[_]T{},
+                .select = (try protocol.processSelectResponses(T, self.is_extended_query)) orelse &[_]T{},
             },
             .Insert, .Update, .Delete, .Merge => Result(T){
                 .command = try protocol.processCommandResponses(),
@@ -206,7 +207,7 @@ pub const Query = struct {
                             @compileError("EXECUTE for SELECT requires T to be a struct");
                         }
                         return Result(T){
-                            .select = (try protocol.processSelectResponses(T)) orelse &[_]T{},
+                            .select = (try protocol.processSelectResponses(T, self.is_extended_query)) orelse &[_]T{},
                         };
                     },
                     .Insert, .Update, .Delete => Result(T){

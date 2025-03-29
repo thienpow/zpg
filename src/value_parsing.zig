@@ -37,6 +37,8 @@ pub const Polygon = field.Polygon;
 pub const JSON = field.JSON;
 pub const JSONB = field.JSONB;
 
+pub const Composite = field.Composite;
+
 pub fn readString(allocator: std.mem.Allocator, reader: anytype) ![]const u8 {
     const len = try reader.readInt(u16, .big);
     if (len == 0xffff) return ""; // NULL value
@@ -382,6 +384,8 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
                 .@"struct" => blk: {
                     const child_value = if (@hasDecl(opt_info.child, "isVarchar") and opt_info.child.isVarchar)
                         try parsePostgresText(VARCHAR, allocator, limitedReader.reader(), len_u64)
+                    else if (@hasDecl(opt_info.child, "isComposite") and opt_info.child.isComposite)
+                        try parsePostgresText(FieldType, allocator, limitedReader.reader(), len_u64)
                     else if (opt_info.child == Uuid)
                         try parsePostgresText(Uuid, allocator, limitedReader.reader(), len_u64)
                     else if (opt_info.child == Decimal)
@@ -464,9 +468,11 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
             }
 
             if (@hasDecl(FieldType, "isSerial") and FieldType.isSerial) {
-                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidSerial;
+                return FieldType.fromPostgresText(bytes[0..read]) catch return error.InvalidSerial;
             } else if (@hasDecl(FieldType, "isVarchar") and FieldType.isVarchar) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidVARCHAR;
+            } else if (@hasDecl(FieldType, "isComposite") and FieldType.isComposite) {
+                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidComposite;
             } else if (FieldType == Decimal) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidDecimalType;
             } else if (FieldType == Money) {
@@ -474,41 +480,41 @@ pub fn readValueForType(allocator: std.mem.Allocator, reader: std.io.AnyReader, 
             } else if (FieldType == Uuid) {
                 return FieldType.fromPostgresText(bytes[0..read]) catch return error.InvalidUuid;
             } else if (FieldType == Timestamp) {
-                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidTimestamp;
+                return FieldType.fromPostgresText(bytes[0..read]) catch return error.InvalidTimestamp;
             } else if (FieldType == Interval) {
-                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidInterval;
+                return FieldType.fromPostgresText(bytes[0..read]) catch return error.InvalidInterval;
             } else if (FieldType == Date) {
-                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidDate;
+                return FieldType.fromPostgresText(bytes[0..read]) catch return error.InvalidDate;
             } else if (FieldType == Time) {
-                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidTime;
+                return FieldType.fromPostgresText(bytes[0..read]) catch return error.InvalidTime;
             } else if (FieldType == TSVector) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidTSVector;
             } else if (FieldType == TSQuery) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidTSQuery;
             } else if (FieldType == CIDR) {
-                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidCIDR;
+                return FieldType.fromPostgresText(bytes[0..read]) catch return error.InvalidCIDR;
             } else if (FieldType == Inet) {
-                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidInet;
+                return FieldType.fromPostgresText(bytes[0..read]) catch return error.InvalidInet;
             } else if (FieldType == MACAddress) {
-                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidMACAddress;
+                return FieldType.fromPostgresText(bytes[0..read]) catch return error.InvalidMACAddress;
             } else if (FieldType == MACAddress8) {
-                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidMACAddress8;
+                return FieldType.fromPostgresText(bytes[0..read]) catch return error.InvalidMACAddress8;
             } else if (FieldType == Bit10) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidBit10;
             } else if (FieldType == VarBit16) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidVarBit16;
             } else if (FieldType == Box) {
-                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidBox;
+                return FieldType.fromPostgresText(bytes[0..read]) catch return error.InvalidBox;
             } else if (FieldType == Circle) {
-                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidCircle;
+                return FieldType.fromPostgresText(bytes[0..read]) catch return error.InvalidCircle;
             } else if (FieldType == Line) {
-                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidLine;
+                return FieldType.fromPostgresText(bytes[0..read]) catch return error.InvalidLine;
             } else if (FieldType == LineSegment) {
-                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidLineSegment;
+                return FieldType.fromPostgresText(bytes[0..read]) catch return error.InvalidLineSegment;
             } else if (FieldType == Path) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidPath;
             } else if (FieldType == Point) {
-                return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidPoint;
+                return FieldType.fromPostgresText(bytes[0..read]) catch return error.InvalidPoint;
             } else if (FieldType == Polygon) {
                 return FieldType.fromPostgresText(bytes[0..read], allocator) catch return error.InvalidPolygon;
             } else if (FieldType == JSON) {
@@ -642,51 +648,53 @@ pub fn readValueForTypeEx(allocator: std.mem.Allocator, reader: std.io.AnyReader
             if (read < @as(usize, @intCast(len))) return error.IncompleteRead;
 
             if (@hasDecl(FieldType, "isSerial") and FieldType.isSerial) {
-                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidSerial;
+                return FieldType.fromPostgresBinary(bytes[0..read]) catch return error.InvalidSerial;
             } else if (@hasDecl(FieldType, "isVarchar") and FieldType.isVarchar) {
                 return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidVARCHAR;
+            } else if (@hasDecl(FieldType, "isComposite") and FieldType.isComposite) {
+                return FieldType.fromPostgresBinary(FieldType, bytes[0..read], allocator) catch return error.InvalidComposite;
             } else if (FieldType == Decimal) {
                 return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidDecimalType;
             } else if (FieldType == Money) {
-                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidMoneyType;
+                return FieldType.fromPostgresBinary(bytes[0..read]) catch return error.InvalidMoneyType;
             } else if (FieldType == Uuid) {
                 return FieldType.fromPostgresBinary(bytes[0..read]) catch return error.InvalidUuid;
             } else if (FieldType == Timestamp) {
-                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidTimestamp;
+                return FieldType.fromPostgresBinary(bytes[0..read]) catch return error.InvalidTimestamp;
             } else if (FieldType == Interval) {
-                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidInterval;
+                return FieldType.fromPostgresBinary(bytes[0..read]) catch return error.InvalidInterval;
             } else if (FieldType == Date) {
-                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidDate;
+                return FieldType.fromPostgresBinary(bytes[0..read]) catch return error.InvalidDate;
             } else if (FieldType == Time) {
-                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidTime;
+                return FieldType.fromPostgresBinary(bytes[0..read]) catch return error.InvalidTime;
             } else if (FieldType == TSVector) {
                 return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidTSVector;
             } else if (FieldType == TSQuery) {
                 return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidTSQuery;
             } else if (FieldType == CIDR) {
-                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidCIDR;
+                return FieldType.fromPostgresBinary(bytes[0..read]) catch return error.InvalidCIDR;
             } else if (FieldType == Inet) {
-                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidInet;
+                return FieldType.fromPostgresBinary(bytes[0..read]) catch return error.InvalidInet;
             } else if (FieldType == MACAddress) {
-                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidMACAddress;
+                return FieldType.fromPostgresBinary(bytes[0..read]) catch return error.InvalidMACAddress;
             } else if (FieldType == MACAddress8) {
-                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidMACAddress8;
+                return FieldType.fromPostgresBinary(bytes[0..read]) catch return error.InvalidMACAddress8;
             } else if (FieldType == Bit10) {
                 return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidBit10;
             } else if (FieldType == VarBit16) {
                 return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidVarBit16;
             } else if (FieldType == Box) {
-                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidBox;
+                return FieldType.fromPostgresBinary(bytes[0..read]) catch return error.InvalidBox;
             } else if (FieldType == Circle) {
-                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidCircle;
+                return FieldType.fromPostgresBinary(bytes[0..read]) catch return error.InvalidCircle;
             } else if (FieldType == Line) {
-                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidLine;
+                return FieldType.fromPostgresBinary(bytes[0..read]) catch return error.InvalidLine;
             } else if (FieldType == LineSegment) {
-                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidLineSegment;
+                return FieldType.fromPostgresBinary(bytes[0..read]) catch return error.InvalidLineSegment;
             } else if (FieldType == Path) {
                 return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidPath;
             } else if (FieldType == Point) {
-                return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidPoint;
+                return FieldType.fromPostgresBinary(bytes[0..read]) catch return error.InvalidPoint;
             } else if (FieldType == Polygon) {
                 return FieldType.fromPostgresBinary(bytes[0..read], allocator) catch return error.InvalidPolygon;
             } else if (FieldType == JSON) {

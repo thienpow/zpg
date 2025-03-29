@@ -9,8 +9,9 @@ pub const Timestamp = struct {
     pub fn fromPostgresBinary(data: []const u8) !Timestamp {
         if (data.len != 8) return error.InvalidBinaryTimestamp;
 
+        // Read 8 bytes as i64 in big-endian (PostgreSQL epoch: 2000-01-01)
+        const microseconds = std.mem.readInt(i64, data[0..8], .big);
         const postgres_epoch: i64 = 946684800; // Seconds from Unix epoch to 2000-01-01
-        const microseconds = std.mem.readInt(i64, data, .big);
 
         return Timestamp{
             .seconds = @divFloor(microseconds, 1_000_000) + postgres_epoch,
@@ -18,8 +19,7 @@ pub const Timestamp = struct {
         };
     }
 
-    pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Timestamp {
-        _ = allocator;
+    pub fn fromPostgresText(text: []const u8) !Timestamp {
         if (text.len < 19) return error.InvalidTimestampFormat;
 
         var timestamp: Timestamp = .{ .seconds = 0, .nano_seconds = 0 };

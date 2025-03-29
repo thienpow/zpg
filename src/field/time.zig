@@ -6,30 +6,27 @@ pub const Time = struct {
     seconds: u8,
     nano_seconds: u32 = 0, // Optional nanoseconds
 
-    pub fn fromPostgresBinary(data: []const u8, allocator: std.mem.Allocator) !Time {
-        _ = allocator; // Not needed here
+    pub fn fromPostgresBinary(data: []const u8) !Time {
         if (data.len != 8) return error.InvalidTimeFormat;
 
         // Read microseconds since midnight (big-endian i64)
-        var micros: i64 = @bitCast(std.mem.bytesToValue(i64, data[0..8]));
-        micros = @byteSwap(micros);
+        const micros: i64 = std.mem.readInt(i64, data[0..8], .big);
 
-        if (micros < 0) return error.InvalidTime;
+        if (micros < 0 or micros > 86_400_000_000) return error.InvalidTime; // Max: 24 hours in micros
 
         // Convert to hours, minutes, seconds, and nanoseconds
         const total_seconds: i64 = @divTrunc(micros, 1_000_000);
-        const nano_seconds: u32 = @intCast((micros % 1_000_000) * 1_000);
+        const nano_seconds: u32 = @intCast(@rem(micros, 1_000_000) * 1_000);
 
         return Time{
             .hours = @intCast(@divTrunc(total_seconds, 3600)),
-            .minutes = @intCast(@divTrunc(total_seconds % 3600, 60)),
-            .seconds = @intCast(total_seconds % 60),
+            .minutes = @intCast(@divTrunc(@rem(total_seconds, 3600), 60)),
+            .seconds = @intCast(@rem(total_seconds, 60)),
             .nano_seconds = nano_seconds,
         };
     }
 
-    pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Time {
-        _ = allocator; // Unused for now
+    pub fn fromPostgresText(text: []const u8) !Time {
         if (text.len < 8) return error.InvalidTimeFormat;
 
         const hours = try std.fmt.parseInt(u8, text[0..2], 10);

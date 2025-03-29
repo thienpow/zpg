@@ -8,13 +8,17 @@ pub const Point = struct {
     pub fn fromPostgresBinary(data: []const u8) !Point {
         if (data.len != 16) return error.InvalidPointBinaryFormat;
 
+        // Read each 8-byte segment as a u64 in big-endian, then convert to f64
+        const x_bits = std.mem.readInt(u64, data[0..8], .big);
+        const y_bits = std.mem.readInt(u64, data[8..16], .big);
+
         return Point{
-            .x = std.mem.read(f64, data[0..8]),
-            .y = std.mem.read(f64, data[8..16]),
+            .x = @bitCast(x_bits),
+            .y = @bitCast(y_bits),
         };
     }
 
-    pub fn fromPostgresText(text: []const u8, _: std.mem.Allocator) !Point {
+    pub fn fromPostgresText(text: []const u8) !Point {
         if (text.len < 3 or text[0] != '(' or text[text.len - 1] != ')') return error.InvalidPointFormat;
         const coords = text[1 .. text.len - 1];
         const comma_pos = std.mem.indexOf(u8, coords, ",") orelse return error.InvalidPointFormat;
@@ -38,15 +42,19 @@ pub const Line = struct {
     pub fn fromPostgresBinary(data: []const u8) !Line {
         if (data.len != 24) return error.InvalidLineBinaryFormat;
 
+        // Read each 8-byte segment as a u64 in big-endian, then convert to f64
+        const a_bits = std.mem.readInt(u64, data[0..8], .big);
+        const b_bits = std.mem.readInt(u64, data[8..16], .big);
+        const c_bits = std.mem.readInt(u64, data[16..24], .big);
+
         return Line{
-            .a = std.mem.read(f64, data[0..8]),
-            .b = std.mem.read(f64, data[8..16]),
-            .c = std.mem.read(f64, data[16..24]),
+            .a = @bitCast(a_bits),
+            .b = @bitCast(b_bits),
+            .c = @bitCast(c_bits),
         };
     }
 
-    pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Line {
-        _ = allocator;
+    pub fn fromPostgresText(text: []const u8) !Line {
         if (text.len < 5 or text[0] != '{' or text[text.len - 1] != '}') return error.InvalidLineFormat;
         const coeffs = text[1 .. text.len - 1];
         var iter = std.mem.splitScalar(u8, coeffs, ',');
@@ -78,13 +86,13 @@ pub const LineSegment = struct {
         };
     }
 
-    pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !LineSegment {
+    pub fn fromPostgresText(text: []const u8) !LineSegment {
         if (text.len < 7 or text[0] != '[' or text[text.len - 1] != ']') return error.InvalidLsegFormat;
         const points = text[1 .. text.len - 1];
         const comma_pos = std.mem.indexOf(u8, points, "),(") orelse return error.InvalidLsegFormat;
 
-        const start = try Point.fromPostgresText(points[0 .. comma_pos + 1], allocator);
-        const end = try Point.fromPostgresText(points[comma_pos + 2 ..], allocator);
+        const start = try Point.fromPostgresText(points[0 .. comma_pos + 1]);
+        const end = try Point.fromPostgresText(points[comma_pos + 2 ..]);
         return LineSegment{ .start = start, .end = end };
     }
 
@@ -111,13 +119,13 @@ pub const Box = struct {
         };
     }
 
-    pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Box {
+    pub fn fromPostgresText(text: []const u8) !Box {
         if (text.len < 5 or text[0] != '(' or text[text.len - 1] != ')') return error.InvalidBoxFormat;
         const points = text[0..];
         const comma_pos = std.mem.indexOf(u8, points, "),(") orelse return error.InvalidBoxFormat;
 
-        const top_right = try Point.fromPostgresText(points[0 .. comma_pos + 1], allocator);
-        const bottom_left = try Point.fromPostgresText(points[comma_pos + 2 ..], allocator);
+        const top_right = try Point.fromPostgresText(points[0 .. comma_pos + 1]);
+        const bottom_left = try Point.fromPostgresText(points[comma_pos + 2 ..]);
         return Box{ .top_right = top_right, .bottom_left = bottom_left };
     }
 
@@ -185,7 +193,7 @@ pub const Path = struct {
         var iter = std.mem.splitScalar(u8, cleaned_points, '|');
         while (iter.next()) |point_str| {
             const trimmed = std.mem.trim(u8, point_str, " ");
-            const point = try Point.fromPostgresText(trimmed, allocator);
+            const point = try Point.fromPostgresText(trimmed);
             try point_list.append(point);
         }
 
@@ -264,7 +272,7 @@ pub const Polygon = struct {
         var iter = std.mem.splitScalar(u8, cleaned_points, '|');
         while (iter.next()) |point_str| {
             const trimmed = std.mem.trim(u8, point_str, " ");
-            const point = try Point.fromPostgresText(trimmed, allocator);
+            const point = try Point.fromPostgresText(trimmed);
             try point_list.append(point);
         }
 
@@ -296,16 +304,17 @@ pub const Circle = struct {
     center: Point,
     radius: f64,
 
-    pub fn fromPostgresBinary(data: []const u8, _: std.mem.Allocator) !Circle {
+    pub fn fromPostgresBinary(data: []const u8) !Circle {
         if (data.len != 24) return error.InvalidCircleBinaryFormat;
 
         const center = try Point.fromPostgresBinary(data[0..16]);
-        const radius = std.mem.readInt(f64, data[16..24], .little);
+        const radius_bits = std.mem.readInt(u64, data[16..24], .big);
+        const radius: f64 = @bitCast(radius_bits);
 
         return Circle{ .center = center, .radius = radius };
     }
 
-    pub fn fromPostgresText(text: []const u8, allocator: std.mem.Allocator) !Circle {
+    pub fn fromPostgresText(text: []const u8) !Circle {
         if (text.len < 5 or text[0] != '<' or text[text.len - 1] != '>') return error.InvalidCircleFormat;
         const parts = text[1 .. text.len - 1];
 
@@ -314,7 +323,7 @@ pub const Circle = struct {
         if (paren_close == parts.len - 1) return error.InvalidCircleFormat; // No radius
         const comma_pos = std.mem.indexOfPos(u8, parts, paren_close + 1, ",") orelse return error.InvalidCircleFormat;
 
-        const center = try Point.fromPostgresText(parts[0 .. paren_close + 1], allocator);
+        const center = try Point.fromPostgresText(parts[0 .. paren_close + 1]);
         const radius = try std.fmt.parseFloat(f64, parts[comma_pos + 1 ..]);
         return Circle{ .center = center, .radius = radius };
     }
