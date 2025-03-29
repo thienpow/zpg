@@ -121,7 +121,7 @@ defer pooled_conn.deinit();
                 </p>
                 <pre><code class="language-zig">
 const prepared_user_one = try query.prepare(
-    "user_one (int8) AS SELECT id, username FROM users WHERE id = $1"
+    "user_one", "SELECT id, username FROM users WHERE id = $1"
 );
                 </code></pre>
                 <p>
