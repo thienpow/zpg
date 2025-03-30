@@ -24,7 +24,7 @@ test "date and time test" {
     }, 3);
     defer pool.deinit();
 
-    var pooled_conn = try zpg.PooledConnection.init(&pool);
+    var pooled_conn = try zpg.PooledConnection.init(&pool, null);
     defer pooled_conn.deinit();
 
     var query = pooled_conn.createQuery(allocator);

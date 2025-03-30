@@ -71,10 +71,14 @@ pub const CommandType = enum {
     Drop,
     Grant,
     Revoke,
+    Begin,
     Commit,
     Rollback,
     Explain,
     Execute,
+    Set,
+    Reset,
+    Do,
     Unknown,
 };
 
@@ -154,10 +158,14 @@ pub fn getCommandType(command: []const u8) CommandType {
     else if (std.mem.startsWith(u8, command, "DROP")) .Drop //DROP
     else if (std.mem.startsWith(u8, command, "GRANT")) .Grant //GRANT
     else if (std.mem.startsWith(u8, command, "REVOKE")) .Revoke //REVOKE
+    else if (std.mem.startsWith(u8, command, "BEGIN")) .Begin //BEGIN
     else if (std.mem.startsWith(u8, command, "COMMIT")) .Commit //COMMIT
     else if (std.mem.startsWith(u8, command, "ROLLBACK")) .Rollback //ROLLBACK
     else if (std.mem.startsWith(u8, command, "EXPLAIN")) .Explain //EXPLAIN
     else if (std.mem.startsWith(u8, command, "EXECUTE")) .Execute //EXECUTE
+    else if (std.mem.startsWith(u8, command, "SET")) .Set //SET
+    else if (std.mem.startsWith(u8, command, "RESET")) .Reset //RESET
+    else if (std.mem.startsWith(u8, command, "DO")) .Do //DO
     else .Unknown;
 }
 

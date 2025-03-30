@@ -54,7 +54,7 @@ test "numeric types test" {
     var pool = try ConnectionPool.init(allocator, config, 3);
     defer pool.deinit();
 
-    var pooled_conn = try PooledConnection.init(&pool);
+    var pooled_conn = try PooledConnection.init(&pool, null);
     defer pooled_conn.deinit();
 
     var query = pooled_conn.createQuery(allocator);

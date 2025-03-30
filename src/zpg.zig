@@ -9,6 +9,7 @@ pub const ConnectionPool = @import("pool.zig").ConnectionPool;
 pub const PooledConnection = @import("pool.zig").PooledConnection;
 pub const Transaction = @import("transaction.zig").Transaction;
 pub const Param = @import("param.zig").Param;
+pub const RLSContext = @import("rls.zig").RLSContext;
 
 pub const types = @import("types.zig");
 pub const field = @import("field/mod.zig");

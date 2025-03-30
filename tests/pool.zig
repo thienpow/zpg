@@ -52,7 +52,7 @@ test "simple pool test" {
 
     // Get a pooled connection from the pool
     std.debug.print("\nAcquiring a connection from the pool...\n", .{});
-    var pooled_conn = try PooledConnection.init(&pool);
+    var pooled_conn = try PooledConnection.init(&pool, null);
     defer pooled_conn.deinit(); // Ensure the connection is returned to the pool
 
     // Create a query object to execute SQL commands

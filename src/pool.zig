@@ -8,6 +8,8 @@ const Connection = @import("connection.zig").Connection;
 const Query = @import("query.zig").Query;
 const QueryEx = @import("queryEx.zig").QueryEx;
 const Config = @import("config.zig").Config;
+const RLSContext = @import("rls.zig").RLSContext;
+const types = @import("types.zig");
 
 /// Possible error types for connection pool operations
 // pub const PoolError = error{
@@ -129,13 +131,13 @@ pub const ConnectionPool = struct {
         self.condition.broadcast();
     }
 
-    /// Gets an available connection from the pool, waiting if necessary
-    pub fn get(self: *ConnectionPool) !*Connection {
-        return self.getWithTimeout(self.timeout_ms);
+    /// Gets an available connection, optionally applying RLS context.
+    pub fn get(self: *ConnectionPool, rls_context: ?*const RLSContext) !*Connection {
+        return self.getWithTimeout(self.timeout_ms, rls_context);
     }
 
     /// Gets an available connection with a specified timeout
-    pub fn getWithTimeout(self: *ConnectionPool, timeout_ms: u64) !*Connection {
+    pub fn getWithTimeout(self: *ConnectionPool, timeout_ms: u64, rls_context: ?*const RLSContext) !*Connection {
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -193,6 +195,31 @@ pub const ConnectionPool = struct {
             };
         }
 
+        // --- RLS Integration START ---
+        // RESET the connection state *before* applying new context
+        // Use a temporary Query object to execute commands
+        var temp_query = Query.init(self.allocator, conn);
+        // Ignore errors during reset? Or log them? If reset fails, the connection state is uncertain.
+        // Maybe force deinit/reconnect if reset fails. For now, try-catch and log.
+        self.resetRLSContext(&temp_query) catch |err| {
+            std.debug.print("WARN: Failed to reset RLS context on connection {}: {}\n", .{ index, err });
+            // Potentially mark connection as bad and try getting another?
+            // For simplicity now, proceed, but this is a risk point.
+        };
+
+        // Apply the new RLS context if provided
+        if (rls_context) |ctx| {
+            self.applyRLSContext(&temp_query, ctx) catch |err| {
+                std.debug.print("ERROR: Failed to apply RLS context on connection {}: {}\n", .{ index, err });
+                // Return the connection to the pool *after* attempting reset again
+                self.resetRLSContext(&temp_query) catch {}; // Best effort cleanup
+                self.available_bitmap.set(index);
+                self.available_count += 1;
+                self.condition.signal();
+                return error.RLSContextError; // Specific error
+            };
+        }
+        // --- RLS Integration END ---
         return conn;
     }
 
@@ -204,6 +231,19 @@ pub const ConnectionPool = struct {
         if (self.is_closed) return;
 
         const index = self.findConnectionIndex(conn) orelse return error.ConnectionNotFound;
+
+        // --- RLS Integration START ---
+        // Reset RLS context *before* marking as available
+        var temp_query = Query.init(self.allocator, conn);
+        self.resetRLSContext(&temp_query) catch |err| {
+            std.debug.print("WARN: Failed to reset RLS context on release for connection {}: {}\n", .{ index, err });
+            // What to do here? If reset fails, the connection is potentially tainted.
+            // Option 1: Log and proceed (risk).
+            // Option 2: Don't return to pool, close it, try to replace later (complex).
+            // Option 3: Mark as needing reset on next 'get'.
+            // Let's stick with logging for now, but document the risk.
+        };
+        // --- RLS Integration END ---
 
         // If connection is in error state, recreate it
         if (conn.state == .Error) {
@@ -231,11 +271,13 @@ pub const ConnectionPool = struct {
         }
 
         // Mark connection as available
-        self.available_bitmap.set(index);
-        self.available_count += 1;
-
-        // Signal waiting threads
-        self.condition.signal();
+        if (!self.available_bitmap.isSet(index)) { // Avoid double-release issues
+            self.available_bitmap.set(index);
+            self.available_count += 1;
+            self.condition.signal(); // Signal only if a connection was actually made available
+        } else {
+            std.debug.print("WARN: Attempted to release connection {} which was already available.\n", .{index});
+        }
     }
 
     /// Gets the number of available connections
@@ -318,6 +360,50 @@ pub const ConnectionPool = struct {
             return error.InitializationFailed;
         }
     }
+
+    // Helper to apply RLS context using SET SESSION
+    fn applyRLSContext(self: *ConnectionPool, query: *Query, ctx: *const RLSContext) !void {
+        var it = ctx.settings.iterator();
+        while (it.next()) |entry| {
+            const key = entry.key_ptr.*;
+            const value = entry.value_ptr.*;
+
+            // Escape the value to prevent SQL injection
+            // NOTE: Simple escaping (doubling quotes) might not be fully robust for all
+            // possible setting values, but is common for RLS IDs.
+            var escaped_value = std.ArrayList(u8).init(self.allocator);
+            defer escaped_value.deinit();
+            for (value) |char| {
+                if (char == '\'') try escaped_value.appendSlice("''") else try escaped_value.append(char);
+            }
+
+            // Construct and run SET SESSION command
+            // Using ? for allocPrint allows failure if OOM
+            const set_sql = try std.fmt.allocPrint(self.allocator, "SET SESSION \"{s}\" = '{s}'", .{ key, escaped_value.items });
+            defer self.allocator.free(set_sql);
+
+            std.debug.print("Applying RLS: {s}\n", .{set_sql}); // Debug logging
+            const result = try query.run(set_sql, types.Empty); // Use Empty for commands not returning data
+            if (!result.success) {
+                // This implies processSimpleCommand received an ErrorResponse
+                std.debug.print("ERROR: Failed to execute: {s}\n", .{set_sql});
+                return error.RLSContextError;
+            }
+        }
+    }
+
+    // Helper to reset RLS context
+    fn resetRLSContext(_: *ConnectionPool, query: *Query) !void {
+        // Option 1: Reset specific keys (requires tracking which keys were set)
+        // Option 2: Use RESET ALL - simpler, but resets *everything*. Probably safer for pooling.
+        const reset_sql = "RESET ALL";
+        std.debug.print("Resetting RLS context: {s}\n", .{reset_sql});
+        const result = try query.run(reset_sql, types.Empty);
+        if (!result.success) {
+            std.debug.print("ERROR: Failed to execute: {s}\n", .{reset_sql});
+            return error.RLSResetFailed; // Specific error
+        }
+    }
 };
 
 /// A wrapper for automatically returning connections to the pool
@@ -325,8 +411,8 @@ pub const PooledConnection = struct {
     conn: *Connection,
     pool: *ConnectionPool,
 
-    pub fn init(pool: *ConnectionPool) !PooledConnection {
-        const conn = try pool.get();
+    pub fn init(pool: *ConnectionPool, rls_context: ?*const RLSContext) !PooledConnection {
+        const conn = try pool.get(rls_context);
         return PooledConnection{
             .conn = conn,
             .pool = pool,

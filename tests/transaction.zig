@@ -34,7 +34,7 @@ test "transaction test" {
 
     // Get a pooled connection
     std.debug.print("Acquiring a connection from the pool...\n", .{});
-    var pooled_conn = try PooledConnection.init(&pool);
+    var pooled_conn = try PooledConnection.init(&pool, null);
     defer pooled_conn.deinit();
 
     // Create a query object

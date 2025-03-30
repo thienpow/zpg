@@ -9,6 +9,8 @@ const RequestType = types.RequestType;
 const ResponseType = types.ResponseType;
 const CommandType = types.CommandType;
 const Config = @import("config.zig").Config;
+const Query = @import("query.zig").Query;
+
 const net_utils = @import("net.zig");
 const tls = @import("tls.zig");
 

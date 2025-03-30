@@ -43,7 +43,7 @@ test "tls connection test" {
     }
 
     std.debug.print("Creating connection...\n", .{});
-    var conn = try zpg.PooledConnection.init(&pool);
+    var conn = try zpg.PooledConnection.init(&pool, null);
     defer {
         std.debug.print("Deinitializing connection...\n", .{});
         conn.deinit();

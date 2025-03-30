@@ -142,7 +142,7 @@ pub const Query = struct {
                     .command = try protocol.processCommandResponses(),
                 };
             },
-            .Create, .Alter, .Drop, .Grant, .Revoke, .Commit, .Rollback => blk: {
+            .Create, .Alter, .Drop, .Grant, .Revoke, .Begin, .Commit, .Rollback, .Set, .Reset, .Do => blk: {
                 try self.conn.sendMessage(@intFromEnum(RequestType.Query), sql, true);
                 break :blk Result(T){
                     .success = try protocol.processSimpleCommand(),
