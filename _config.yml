@@ -1,4 +1,6 @@
-theme: minima # Default theme, can be swapped
-title: ZPG Docs
+title: My Docs
 include:
   - _layouts
+collections:
+  docs:
+    output: true
