@@ -238,11 +238,6 @@ pub const Protocol = struct {
                 .ErrorResponse => {
                     var current_error: types.PostgresError = try processErrorResponse(self, reader, allocator);
 
-                    // *** Remove the defer and returned_error_early flag ***
-                    // var returned_error_early = false;
-                    // defer if (!returned_error_early) current_error.deinit(allocator);
-
-                    // Log the error details (optional but useful)
                     if (current_error.severity) |severity| {
                         std.debug.print("Error Severity: {s}\n", .{severity});
                     }
@@ -250,21 +245,16 @@ pub const Protocol = struct {
                         std.debug.print("Error Message: {s}\n", .{message});
                     }
 
-                    // ---> CHECK SEVERITY <---
                     if (current_error.severity) |severity| {
                         if (std.mem.eql(u8, severity, "ERROR") or
                             std.mem.eql(u8, severity, "FATAL") or
                             std.mem.eql(u8, severity, "PANIC"))
                         {
-                            // *** Deinit manually BEFORE returning ***
                             current_error.deinit(allocator);
                             return error.PostgresError;
                         }
                     }
 
-                    // If not a fatal error, fall through.
-                    // The error details need to be deinitialized here too.
-                    // If we 'continue', the struct goes out of scope without deinit.
                     current_error.deinit(allocator);
                     continue;
                 },
@@ -281,8 +271,6 @@ pub const Protocol = struct {
         const allocator = self.allocator;
         var buffer: [4096]u8 = undefined;
         var return_value: u64 = 0;
-        var error_encountered = false;
-        var postgres_error: ?PostgresError = null;
 
         while (true) {
             const result = try self.conn.readMessageType(&buffer);
@@ -317,10 +305,6 @@ pub const Protocol = struct {
                     continue;
                 },
                 .CommandComplete => {
-                    if (error_encountered) {
-                        return 0;
-                    }
-
                     const command_tag = try reader.readUntilDelimiterAlloc(allocator, 0, 1024);
                     defer allocator.free(command_tag);
 
@@ -347,25 +331,29 @@ pub const Protocol = struct {
                     }
                 },
                 .ReadyForQuery => {
-                    if (postgres_error) |*pe| {
-                        pe.deinit(allocator);
-                    }
                     return return_value;
                 },
                 .ErrorResponse => {
-                    error_encountered = true;
-                    if (postgres_error) |*pe| {
-                        pe.deinit(allocator);
+                    var current_error: types.PostgresError = try processErrorResponse(self, reader, allocator);
+
+                    if (current_error.severity) |severity| {
+                        std.debug.print("Error Severity: {s}\n", .{severity});
                     }
-                    postgres_error = try processErrorResponse(self, reader, allocator);
-                    if (postgres_error) |err| {
-                        if (err.severity) |severity| {
-                            std.debug.print("Error Severity: {s}\n", .{severity});
-                        }
-                        if (err.message) |message| {
-                            std.debug.print("Error Message: {s}\n", .{message});
+                    if (current_error.message) |message| {
+                        std.debug.print("Error Message: {s}\n", .{message});
+                    }
+
+                    if (current_error.severity) |severity| {
+                        if (std.mem.eql(u8, severity, "ERROR") or
+                            std.mem.eql(u8, severity, "FATAL") or
+                            std.mem.eql(u8, severity, "PANIC"))
+                        {
+                            current_error.deinit(allocator);
+                            return error.PostgresError;
                         }
                     }
+
+                    current_error.deinit(allocator);
                     continue;
                 },
                 .NoticeResponse => {
@@ -388,8 +376,6 @@ pub const Protocol = struct {
         const allocator = self.allocator;
         var buffer: [4096]u8 = undefined;
         var success = false;
-        var error_encountered = false;
-        var postgres_error: ?PostgresError = null;
 
         while (true) {
             const result = try self.conn.readMessageType(&buffer);
@@ -401,67 +387,53 @@ pub const Protocol = struct {
 
             switch (response_type) {
                 .CommandComplete => {
-                    if (error_encountered) {
-                        return false;
-                    }
-
-                    // CommandComplete - just verify it’s there
                     const command_tag = try reader.readUntilDelimiterAlloc(allocator, 0, 1024);
                     defer allocator.free(command_tag);
-                    // Could optionally check command_tag for specific completion status
                     success = true;
                 },
                 .ReadyForQuery => {
-                    if (postgres_error) |*pe| {
-                        pe.deinit(allocator);
-                    }
-                    // ReadyForQuery - transaction complete
                     return success;
                 },
                 .ErrorResponse => {
-                    // Collect error details but continue processing
-                    error_encountered = true;
+                    var current_error: types.PostgresError = try processErrorResponse(self, reader, allocator);
 
-                    // Free any previous error
-                    if (postgres_error) |*pe| {
-                        pe.deinit(allocator);
+                    if (current_error.severity) |severity| {
+                        std.debug.print("Error Severity: {s}\n", .{severity});
+                    }
+                    if (current_error.message) |message| {
+                        std.debug.print("Error Message: {s}\n", .{message});
                     }
 
-                    postgres_error = try processErrorResponse(self, reader, allocator);
-
-                    // Log or handle the error
-                    if (postgres_error) |err| {
-                        if (err.severity) |severity| {
-                            std.debug.print("Error Severity: {s}\n", .{severity});
-                        }
-                        if (err.message) |message| {
-                            std.debug.print("Error Message: {s}\n", .{message});
+                    if (current_error.severity) |severity| {
+                        if (std.mem.eql(u8, severity, "ERROR") or
+                            std.mem.eql(u8, severity, "FATAL") or
+                            std.mem.eql(u8, severity, "PANIC"))
+                        {
+                            current_error.deinit(allocator);
+                            return error.PostgresError;
                         }
                     }
 
-                    // Continue processing to reach ReadyForQuery
+                    current_error.deinit(allocator);
                     continue;
                 },
                 .NoticeResponse => {
                     var notice = try processNoticeResponse(self, reader, allocator);
                     defer notice.deinit(allocator);
 
-                    // Log or handle the notice
                     if (notice.message) |message| {
                         std.debug.print("Notice: {s}\n", .{message});
                     }
 
-                    // Continue processing
                     continue;
                 },
                 .ParameterStatus => {
-                    // Handle ParameterStatus by reading and discarding or logging it
                     const param_name = try reader.readUntilDelimiterAlloc(allocator, 0, 1024);
                     defer allocator.free(param_name);
                     const param_value = try reader.readUntilDelimiterAlloc(allocator, 0, 1024);
                     defer allocator.free(param_value);
                     std.debug.print("ParameterStatus: {s} = {s}\n", .{ param_name, param_value });
-                    continue; // Keep processing subsequent messages
+                    continue;
                 },
                 else => {
                     std.debug.print("Unexpected response type: {}", .{response_type});
@@ -585,8 +557,31 @@ pub const Protocol = struct {
                 .ReadyForQuery => {
                     return try rows.toOwnedSlice();
                 },
+                .ErrorResponse => {
+                    var current_error: types.PostgresError = try processErrorResponse(self, reader, allocator);
+
+                    if (current_error.severity) |severity| {
+                        std.debug.print("Error Severity: {s}\n", .{severity});
+                    }
+                    if (current_error.message) |message| {
+                        std.debug.print("Error Message: {s}\n", .{message});
+                    }
+
+                    if (current_error.severity) |severity| {
+                        if (std.mem.eql(u8, severity, "ERROR") or
+                            std.mem.eql(u8, severity, "FATAL") or
+                            std.mem.eql(u8, severity, "PANIC"))
+                        {
+                            current_error.deinit(allocator);
+                            return error.PostgresError;
+                        }
+                    }
+
+                    current_error.deinit(allocator);
+                    continue;
+                },
                 else => {
-                    std.debug.print("Bad thing happen, response_type: {}", .{response_type});
+                    std.debug.print("Unexpected response type: {}", .{response_type});
                     return error.ProtocolError;
                 },
             }
