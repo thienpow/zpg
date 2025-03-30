@@ -176,9 +176,6 @@ pub const Protocol = struct {
         const allocator = self.allocator;
         var buffer: [4096]u8 = undefined;
 
-        var error_encountered = false;
-        var postgres_error: ?PostgresError = null;
-
         var rows = std.ArrayList(T).init(allocator);
         defer rows.deinit();
 
@@ -230,35 +227,45 @@ pub const Protocol = struct {
                     try rows.append(instance);
                 },
                 .CommandComplete => {
-                    if (error_encountered) {
-                        return null;
-                    }
-
                     const command_tag = try reader.readUntilDelimiterAlloc(allocator, 0, 1024);
                     defer allocator.free(command_tag);
                     if (!std.mem.startsWith(u8, command_tag, "SELECT")) return error.NotASelectQuery;
                 },
                 .ReadyForQuery => {
-                    if (postgres_error) |*pe| {
-                        pe.deinit(allocator);
-                    }
                     const owned_slice = try rows.toOwnedSlice();
                     return if (owned_slice.len == 0) null else owned_slice;
                 },
                 .ErrorResponse => {
-                    error_encountered = true;
-                    if (postgres_error) |*pe| {
-                        pe.deinit(allocator);
+                    var current_error: types.PostgresError = try processErrorResponse(self, reader, allocator);
+
+                    // *** Remove the defer and returned_error_early flag ***
+                    // var returned_error_early = false;
+                    // defer if (!returned_error_early) current_error.deinit(allocator);
+
+                    // Log the error details (optional but useful)
+                    if (current_error.severity) |severity| {
+                        std.debug.print("Error Severity: {s}\n", .{severity});
                     }
-                    postgres_error = try processErrorResponse(self, reader, allocator);
-                    if (postgres_error) |err| {
-                        if (err.severity) |severity| {
-                            std.debug.print("Error Severity: {s}\n", .{severity});
-                        }
-                        if (err.message) |message| {
-                            std.debug.print("Error Message: {s}\n", .{message});
+                    if (current_error.message) |message| {
+                        std.debug.print("Error Message: {s}\n", .{message});
+                    }
+
+                    // ---> CHECK SEVERITY <---
+                    if (current_error.severity) |severity| {
+                        if (std.mem.eql(u8, severity, "ERROR") or
+                            std.mem.eql(u8, severity, "FATAL") or
+                            std.mem.eql(u8, severity, "PANIC"))
+                        {
+                            // *** Deinit manually BEFORE returning ***
+                            current_error.deinit(allocator);
+                            return error.PostgresError;
                         }
                     }
+
+                    // If not a fatal error, fall through.
+                    // The error details need to be deinitialized here too.
+                    // If we 'continue', the struct goes out of scope without deinit.
+                    current_error.deinit(allocator);
                     continue;
                 },
                 else => {
@@ -446,6 +453,15 @@ pub const Protocol = struct {
 
                     // Continue processing
                     continue;
+                },
+                .ParameterStatus => {
+                    // Handle ParameterStatus by reading and discarding or logging it
+                    const param_name = try reader.readUntilDelimiterAlloc(allocator, 0, 1024);
+                    defer allocator.free(param_name);
+                    const param_value = try reader.readUntilDelimiterAlloc(allocator, 0, 1024);
+                    defer allocator.free(param_value);
+                    std.debug.print("ParameterStatus: {s} = {s}\n", .{ param_name, param_value });
+                    continue; // Keep processing subsequent messages
                 },
                 else => {
                     std.debug.print("Unexpected response type: {}", .{response_type});

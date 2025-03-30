@@ -2,14 +2,14 @@ const std = @import("std");
 const Query = @import("query.zig").Query;
 const types = @import("types.zig");
 const RequestType = types.RequestType;
-const RLSContext = @import("rls.zig");
+const RLSContext = @import("rls.zig").RLSContext;
 
 pub const Transaction = struct {
     query: *Query,
     active: bool,
 
     pub fn begin(query: *Query, rls_context: ?*const RLSContext) !Transaction {
-        try query.run("BEGIN", types.Empty);
+        _ = try query.run("BEGIN", types.Empty);
 
         // Apply local settings if context is provided
         if (rls_context) |ctx| {
@@ -33,7 +33,7 @@ pub const Transaction = struct {
                 const result = try query.run(set_sql, types.Empty);
                 if (!result.success) {
                     // If setting local fails, we should probably rollback immediately
-                    query.run("ROLLBACK", types.Empty) catch {}; // Best effort rollback
+                    _ = query.run("ROLLBACK", types.Empty) catch {}; // Best effort rollback
                     return error.RLSContextError;
                 }
             }

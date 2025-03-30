@@ -64,6 +64,7 @@ test "row level security (RLS) test" {
 
     std.debug.print("Granting permissions to test_user...\n", .{});
     _ = try setup_query.run("GRANT ALL ON rls_test_table TO test_user", zpg.types.Empty);
+    _ = try setup_query.run("GRANT ALL ON rls_test_table_id_seq TO test_user", zpg.types.Empty);
 
     std.debug.print("Inserting test data...\n", .{});
     _ = try setup_query.prepare("insert_rls", "INSERT INTO rls_test_table (user_id, data) VALUES ($1, $2)");
