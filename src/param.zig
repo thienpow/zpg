@@ -54,7 +54,7 @@ pub const Param = struct {
     }
 };
 
-const ParamValue = union(enum) {
+pub const ParamValue = union(enum) {
     Null,
     String: []const u8,
     Int: struct {
@@ -66,6 +66,7 @@ const ParamValue = union(enum) {
         size: usize,
     },
     Bool: bool,
+    Bytea: []const u8, // Added for binary data support
 
     pub fn writeTo(self: ParamValue, writer: anytype, format: u16) !void {
         switch (self) {
@@ -114,9 +115,35 @@ const ParamValue = union(enum) {
                     try writer.writeByte(if (value) 1 else 0);
                 }
             },
+            .Bytea => |value| {
+                if (format == 0) { // Text format
+                    // PostgreSQL hex format: \x followed by hex digits
+                    var buffer = std.ArrayList(u8).init(std.heap.page_allocator);
+                    defer buffer.deinit();
+
+                    try buffer.writer().writeAll("\\x");
+                    for (value) |byte| {
+                        try std.fmt.format(buffer.writer(), "{x:0>2}", .{byte});
+                    }
+
+                    try writer.writeInt(i32, @intCast(buffer.items.len), .big);
+                    try writer.writeAll(buffer.items);
+                } else { // Binary format
+                    try writer.writeInt(i32, @intCast(value.len), .big);
+                    try writer.writeAll(value);
+                }
+            },
         }
     }
 };
+
+// Create a parameter with binary data
+pub fn bytea(value: []const u8) Param {
+    return .{
+        .format = 1, // Binary format for efficiency
+        .value = .{ .Bytea = value },
+    };
+}
 
 // Helper function to convert integers to network byte order
 fn intToBytes(value: anytype) [8]u8 {

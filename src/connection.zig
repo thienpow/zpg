@@ -22,6 +22,7 @@ pub const Connection = struct {
     config: Config,
     statement_cache: std.StringHashMap(CommandType),
     protocol_version: u32 = 0x30000,
+    server_parameters: std.StringHashMap([]const u8),
 
     comptime {
         if (@alignOf(Connection) != 8) { // Or whatever alignment you expect
@@ -39,6 +40,7 @@ pub const Connection = struct {
             .state = .Disconnected,
             .config = config,
             .statement_cache = std.StringHashMap(CommandType).init(allocator),
+            .server_parameters = std.StringHashMap([]const u8).init(allocator),
         };
     }
 
@@ -56,6 +58,13 @@ pub const Connection = struct {
             self.allocator.free(entry.key_ptr.*);
         }
         self.statement_cache.deinit();
+
+        var param_it = self.server_parameters.iterator();
+        while (param_it.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            self.allocator.free(entry.value_ptr.*);
+        }
+        self.server_parameters.deinit();
     }
 
     pub fn connect(self: *Connection) !void {
@@ -84,9 +93,9 @@ pub const Connection = struct {
             switch (response_type) {
                 .ParameterStatus => {
                     const key = try reader.readUntilDelimiterAlloc(self.allocator, 0, 256);
-                    defer self.allocator.free(key);
                     const value = try reader.readUntilDelimiterAlloc(self.allocator, 0, 256);
-                    defer self.allocator.free(value);
+                    try self.server_parameters.put(key, value);
+                    // Note: key and value are now owned by server_parameters, no need to free here
                 },
                 .BackendKeyData => {
                     const pid = try reader.readInt(i32, .big);
@@ -167,6 +176,21 @@ pub const Connection = struct {
         if (total_len < 1) return error.ProtocolError;
         const response_type = buffer[0];
         return .{ .type = response_type, .len = total_len };
+    }
+
+    pub fn getServerParameter(self: *Connection, key: []const u8) ?[]const u8 {
+        return self.server_parameters.get(key);
+    }
+
+    pub fn getServerParameterOrDefault(self: *Connection, key: []const u8, default: []const u8) []const u8 {
+        return self.getServerParameter(key) orelse default;
+    }
+
+    pub fn isServerParameterOn(self: *Connection, key: []const u8) bool {
+        if (self.getServerParameter(key)) |value| {
+            return std.mem.eql(u8, value, "on") or std.mem.eql(u8, value, "true") or std.mem.eql(u8, value, "yes") or std.mem.eql(u8, value, "1");
+        }
+        return false;
     }
 
     fn startup(self: *Connection) !void {

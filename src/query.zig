@@ -89,6 +89,11 @@ pub const Query = struct {
         var buffer = std.ArrayList(u8).init(self.allocator);
         defer buffer.deinit();
 
+        // Validate prepared statement name
+        if (name.len == 0) {
+            return error.EmptyStatementName;
+        }
+
         // Always construct an EXECUTE statement in text mode
         try buffer.writer().writeAll("EXECUTE ");
         try buffer.writer().writeAll(name);
@@ -96,14 +101,21 @@ pub const Query = struct {
         if (params) |p| {
             if (p.len > 0) {
                 try buffer.writer().writeAll(" (");
-
                 // Format parameters as text
                 for (p, 0..) |param, i| {
                     if (i > 0) try buffer.writer().writeAll(", ");
                     try param_utils.formatParamAsText(&buffer, param);
                 }
-
                 try buffer.writer().writeAll(")");
+            }
+        }
+
+        // Check for server parameters that might affect this execution
+        if (self.conn.getServerParameter("standard_conforming_strings")) |value| {
+            const standard_strings = std.mem.eql(u8, value, "on");
+            if (!standard_strings) {
+                // Log warning about non-standard string handling
+                std.log.warn("Server uses non-standard string escaping", .{});
             }
         }
 

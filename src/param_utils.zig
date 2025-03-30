@@ -3,8 +3,10 @@ const Param = @import("param.zig").Param;
 
 pub fn formatParamAsText(buffer: *std.ArrayList(u8), param: Param) !void {
     const writer = buffer.writer();
+
     switch (param.value) {
         .Null => try writer.writeAll("NULL"),
+
         .String => |value| {
             // Escape single quotes for SQL
             try writer.writeByte('\'');
@@ -14,8 +16,9 @@ pub fn formatParamAsText(buffer: *std.ArrayList(u8), param: Param) !void {
             }
             try writer.writeByte('\'');
         },
+
         .Int => |data| {
-            // Extract the integer based on its size
+            // Read integer value based on size
             switch (data.size) {
                 1 => {
                     const value = std.mem.readInt(i8, data.bytes[0..1], .big);
@@ -33,11 +36,12 @@ pub fn formatParamAsText(buffer: *std.ArrayList(u8), param: Param) !void {
                     const value = std.mem.readInt(i64, data.bytes[0..8], .big);
                     try std.fmt.format(writer, "{d}", .{value});
                 },
-                else => unreachable,
+                else => return error.UnsupportedIntSize,
             }
         },
+
         .Float => |data| {
-            // Extract the float based on its size
+            // Format float value based on size
             if (data.size == 4) {
                 const bits = std.mem.readInt(u32, data.bytes[0..4], .big);
                 const value: f32 = @bitCast(bits);
@@ -47,10 +51,20 @@ pub fn formatParamAsText(buffer: *std.ArrayList(u8), param: Param) !void {
                 const value: f64 = @bitCast(bits);
                 try std.fmt.format(writer, "{d}", .{value});
             } else {
-                unreachable;
+                return error.UnsupportedFloatSize;
             }
         },
+
         .Bool => |value| try writer.writeAll(if (value) "TRUE" else "FALSE"),
+
+        .Bytea => |value| {
+            // Format as PostgreSQL hex literal
+            try writer.writeAll("E'\\\\x");
+            for (value) |byte| {
+                try std.fmt.format(writer, "{x:0>2}", .{byte});
+            }
+            try writer.writeByte('\'');
+        },
     }
 }
 
