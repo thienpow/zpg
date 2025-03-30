@@ -1,0 +1,4 @@
+theme: minima # Default theme, can be swapped
+title: ZPG Docs
+include:
+  - _layouts
