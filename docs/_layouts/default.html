@@ -31,11 +31,8 @@
     <body>
         <div class="sidebar">
             <ul>
-                {% for item in site.docs %}
-                <li><a href="{{ item.url }}">{{ item.title }}</a></li>
-                {% else %}
-                <li>No documents found!</li>
-                {% endfor %}
+                <li><a href="topics/topic1">Topic 1</a></li>
+                <li><a href="topics/topic2">Topic 2</a></li>
             </ul>
         </div>
         <div class="content">{{ content }}</div>
