@@ -236,27 +236,9 @@ pub const Protocol = struct {
                     return if (owned_slice.len == 0) null else owned_slice;
                 },
                 .ErrorResponse => {
-                    var current_error: types.PostgresError = try processErrorResponse(self, reader, allocator);
-
-                    if (current_error.severity) |severity| {
-                        std.debug.print("Error Severity: {s}\n", .{severity});
+                    if (try self.handleCommonErrorResponse(reader, allocator)) {
+                        continue;
                     }
-                    if (current_error.message) |message| {
-                        std.debug.print("Error Message: {s}\n", .{message});
-                    }
-
-                    if (current_error.severity) |severity| {
-                        if (std.mem.eql(u8, severity, "ERROR") or
-                            std.mem.eql(u8, severity, "FATAL") or
-                            std.mem.eql(u8, severity, "PANIC"))
-                        {
-                            current_error.deinit(allocator);
-                            return error.PostgresError;
-                        }
-                    }
-
-                    current_error.deinit(allocator);
-                    continue;
                 },
                 else => {
                     std.debug.print("Unexpected response type: {}\n", .{response_type});
@@ -334,27 +316,9 @@ pub const Protocol = struct {
                     return return_value;
                 },
                 .ErrorResponse => {
-                    var current_error: types.PostgresError = try processErrorResponse(self, reader, allocator);
-
-                    if (current_error.severity) |severity| {
-                        std.debug.print("Error Severity: {s}\n", .{severity});
+                    if (try self.handleCommonErrorResponse(reader, allocator)) {
+                        continue;
                     }
-                    if (current_error.message) |message| {
-                        std.debug.print("Error Message: {s}\n", .{message});
-                    }
-
-                    if (current_error.severity) |severity| {
-                        if (std.mem.eql(u8, severity, "ERROR") or
-                            std.mem.eql(u8, severity, "FATAL") or
-                            std.mem.eql(u8, severity, "PANIC"))
-                        {
-                            current_error.deinit(allocator);
-                            return error.PostgresError;
-                        }
-                    }
-
-                    current_error.deinit(allocator);
-                    continue;
                 },
                 .NoticeResponse => {
                     var notice = try processNoticeResponse(self, reader, allocator);
@@ -395,27 +359,9 @@ pub const Protocol = struct {
                     return success;
                 },
                 .ErrorResponse => {
-                    var current_error: types.PostgresError = try processErrorResponse(self, reader, allocator);
-
-                    if (current_error.severity) |severity| {
-                        std.debug.print("Error Severity: {s}\n", .{severity});
+                    if (try self.handleCommonErrorResponse(reader, allocator)) {
+                        continue;
                     }
-                    if (current_error.message) |message| {
-                        std.debug.print("Error Message: {s}\n", .{message});
-                    }
-
-                    if (current_error.severity) |severity| {
-                        if (std.mem.eql(u8, severity, "ERROR") or
-                            std.mem.eql(u8, severity, "FATAL") or
-                            std.mem.eql(u8, severity, "PANIC"))
-                        {
-                            current_error.deinit(allocator);
-                            return error.PostgresError;
-                        }
-                    }
-
-                    current_error.deinit(allocator);
-                    continue;
                 },
                 .NoticeResponse => {
                     var notice = try processNoticeResponse(self, reader, allocator);
@@ -558,27 +504,9 @@ pub const Protocol = struct {
                     return try rows.toOwnedSlice();
                 },
                 .ErrorResponse => {
-                    var current_error: types.PostgresError = try processErrorResponse(self, reader, allocator);
-
-                    if (current_error.severity) |severity| {
-                        std.debug.print("Error Severity: {s}\n", .{severity});
+                    if (try self.handleCommonErrorResponse(reader, allocator)) {
+                        continue;
                     }
-                    if (current_error.message) |message| {
-                        std.debug.print("Error Message: {s}\n", .{message});
-                    }
-
-                    if (current_error.severity) |severity| {
-                        if (std.mem.eql(u8, severity, "ERROR") or
-                            std.mem.eql(u8, severity, "FATAL") or
-                            std.mem.eql(u8, severity, "PANIC"))
-                        {
-                            current_error.deinit(allocator);
-                            return error.PostgresError;
-                        }
-                    }
-
-                    current_error.deinit(allocator);
-                    continue;
                 },
                 else => {
                     std.debug.print("Unexpected response type: {}", .{response_type});
@@ -586,5 +514,30 @@ pub const Protocol = struct {
                 },
             }
         }
+    }
+
+    // --- Private Helper Function ---
+    fn handleCommonErrorResponse(self: *Protocol, reader: anytype, allocator: Allocator) !bool {
+        var current_error: PostgresError = try processErrorResponse(self, reader, allocator);
+        defer current_error.deinit(allocator); // Ensure deinit happens
+
+        if (current_error.severity) |severity| {
+            std.debug.print("Error Severity: {s}\n", .{severity});
+        }
+        if (current_error.message) |message| {
+            std.debug.print("Error Message: {s}\n", .{message});
+        }
+
+        if (current_error.severity) |severity| {
+            if (std.mem.eql(u8, severity, "ERROR") or
+                std.mem.eql(u8, severity, "FATAL") or
+                std.mem.eql(u8, severity, "PANIC"))
+            {
+                // Indicate a fatal error occurred
+                return error.PostgresError;
+            }
+        }
+        // Indicate a non-fatal error, loop should continue
+        return true;
     }
 };
