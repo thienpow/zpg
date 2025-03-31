@@ -43,12 +43,11 @@ body {
 }
 .top-bar h6 {
     margin: 0;
-    font-size: 10px;
+    font-size: 12x;
     color: #c9d1d9;
 }
 .top-bar h6 .page-title {
     margin: 0;
-    font-size: 10px;
     font-weight: 600;
     color: #c9d1d9;
 }
