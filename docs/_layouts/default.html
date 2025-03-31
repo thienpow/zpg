@@ -186,12 +186,20 @@
                 }
                 .sidebar {
                     width: 100%;
-                    height: auto;
+                    height: 100vh; /* Full height of the viewport */
                     transform: translateX(-100%);
                     z-index: 999;
+                    position: fixed; /* Ensure it stays fixed over content */
+                    top: 60px; /* Below the top bar */
+                    left: 0;
+                    background-color: #0d1117; /* Consistent background */
+                    padding: 24px;
+                    box-sizing: border-box;
+                    overflow-y: auto; /* Allow scrolling if content overflows */
                 }
                 .sidebar.active {
-                    transform: translateX(0);
+                    transform: translateX(0); /* Slide in fully */
+                    width: 100vw; /* Full viewport width */
                 }
                 .content {
                     width: 100%;

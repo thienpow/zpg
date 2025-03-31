@@ -114,5 +114,3 @@ pub fn main() !void {
     }
 }
 ```
-
-End of doc here.
