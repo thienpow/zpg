@@ -2,7 +2,6 @@
 <html>
     <head>
         <title>{{ page.title }} | zpg Docs</title>
-        <!-- Added site name to title -->
         <link
             href="https://fonts.googleapis.com/css2?family=Inter&display=swap"
             rel="stylesheet"
@@ -11,21 +10,26 @@
             body {
                 font-family: "Inter", sans-serif;
                 display: flex;
-                line-height: 1.6; /* Improved readability */
+                flex-direction: row;
+                line-height: 1.6;
+                margin: 0;
             }
+
+            /* Sidebar */
             .sidebar {
                 width: 20%;
                 position: fixed;
                 left: 0;
-                top: 0; /* Align to top */
-                height: 100vh; /* Full height */
-                overflow-y: auto; /* Scroll if needed */
+                top: 0;
+                height: 100vh;
+                overflow-y: auto;
                 padding: 20px;
-                box-sizing: border-box; /* Include padding in width */
-                border-right: 1px solid #eee; /* Subtle separator */
+                box-sizing: border-box;
+                border-right: 1px solid #eee;
+                background-color: #fff;
+                transition: transform 0.3s ease;
             }
             .sidebar h2 {
-                /* Add a title to the sidebar */
                 margin-top: 0;
                 font-size: 1.2em;
             }
@@ -36,26 +40,33 @@
             .sidebar li a {
                 text-decoration: none;
                 color: #333;
-                display: block; /* Make links block level */
+                display: block;
                 padding: 5px 0;
             }
             .sidebar li a:hover {
                 color: #007bff;
             }
+
+            /* Content */
             .content {
-                width: 60%; /* Reduced from 56% */
-                margin-left: 20%; /* Match sidebar width */
+                width: 60%;
+                margin-left: 20%;
                 padding: 20px;
                 box-sizing: border-box;
             }
+
+            /* TOC */
             .toc {
                 width: 20%;
-                position: sticky;
+                position: fixed;
+                right: 0;
                 top: 20px;
-                margin-left: 78%;
                 height: calc(100vh - 40px);
                 overflow-y: auto;
                 padding-left: 15px;
+                background-color: #f9f9f9;
+                border-left: 1px solid #eee;
+                transition: opacity 0.3s ease;
             }
             .toc h3 {
                 margin-top: 0;
@@ -63,7 +74,7 @@
             }
             .toc ul {
                 list-style: none;
-                padding-left: 10px; /* Indent TOC items */
+                padding-left: 10px;
             }
             .toc li a {
                 text-decoration: none;
@@ -76,34 +87,102 @@
                 color: #007bff;
             }
 
-            /* Add some basic code styling */
+            /* GitHub-like Code Styling */
             pre {
-                background-color: #f8f8f8;
-                border: 1px solid #ddd;
-                padding: 10px;
-                border-radius: 4px;
-                overflow-x: auto; /* Handle long code lines */
+                background-color: #f6f8fa; /* GitHub's light gray background */
+                border: 1px solid #d0d7de; /* Subtle border */
+                padding: 16px; /* More spacious padding */
+                border-radius: 6px; /* Rounded corners */
+                overflow-x: auto; /* Horizontal scroll for long lines */
+                font-family:
+                    "SFMono-Regular", Consolas, "Courier New", monospace;
+                font-size: 13px; /* Slightly smaller font */
+                line-height: 1.45; /* Matches GitHub's line spacing */
+                color: #24292e; /* Dark text color */
             }
             code {
-                font-family: Consolas, "Courier New", monospace;
-                background-color: #f0f0f0; /* Slightly different background for inline code */
-                padding: 2px 4px;
-                border-radius: 3px;
+                background-color: #f6f8fa; /* Same background for inline code */
+                border: 1px solid #d0d7de;
+                padding: 0.2em 0.4em; /* Smaller padding for inline */
+                border-radius: 6px;
+                font-family:
+                    "SFMono-Regular", Consolas, "Courier New", monospace;
+                font-size: 85%; /* Slightly smaller than surrounding text */
+                color: #24292e;
             }
             pre code {
-                /* Don't double-style code inside pre */
-                background-color: transparent;
-                padding: 0;
-                border-radius: 0;
+                background-color: transparent; /* Avoid double background in pre */
+                border: none; /* No border inside pre */
+                padding: 0; /* Reset padding */
+                font-size: 100%; /* Match pre's font size */
+            }
+
+            /* Mobile Menu Toggle */
+            .menu-toggle {
+                display: none;
+                position: fixed;
+                top: 10px;
+                left: 10px;
+                font-size: 1.5em;
+                background: none;
+                border: none;
+                cursor: pointer;
+                z-index: 1000;
+            }
+
+            /* Media Queries for Mobile */
+            @media (max-width: 768px) {
+                body {
+                    flex-direction: column;
+                }
+                .sidebar {
+                    width: 100%;
+                    height: auto;
+                    transform: translateX(-100%);
+                    z-index: 999;
+                }
+                .sidebar.active {
+                    transform: translateX(0);
+                }
+                .content {
+                    width: 100%;
+                    margin-left: 0;
+                    padding: 15px;
+                }
+                .toc {
+                    display: none;
+                    width: 100%;
+                    position: static;
+                    background-color: #fff;
+                    border: none;
+                    padding: 15px;
+                    margin-top: 20px;
+                }
+                .toc.active {
+                    display: block;
+                }
+                .menu-toggle {
+                    display: block;
+                }
+            }
+            @media (max-width: 480px) {
+                .content {
+                    padding: 10px;
+                }
+                .sidebar {
+                    padding: 15px;
+                }
+                .toc {
+                    padding: 10px;
+                }
             }
         </style>
     </head>
     <body>
+        <button class="menu-toggle" aria-label="Toggle Menu">☰</button>
         <div class="sidebar">
             <h2>zpg Docs</h2>
-            <!-- Added sidebar title -->
             <ul>
-                <!-- Updated Links -->
                 <li><a href="{{ site.baseurl }}/">Home</a></li>
                 <li>
                     <a href="{{ site.baseurl }}/configuration.html"
@@ -133,14 +212,27 @@
                 <li>
                     <a href="{{ site.baseurl }}/rls.html">Row-Level Security</a>
                 </li>
-                <!-- Add more links as needed -->
             </ul>
         </div>
-        <div class="content">{{ content }}</div>
+        <div class="content">
+            <!-- Example content with code blocks -->
+            <h1 id="welcome">Welcome</h1>
+            <p>Here's some inline <code>code</code> for you.</p>
+            <pre><code>const example = "Hello, GitHub!";
+console.log(example);
+</code></pre>
+            <h2 id="section1">Section 1</h2>
+            <pre><code>function test() {
+    return "This is a test";
+}
+</code></pre>
+            <h3 id="subsection1">Subsection 1</h3>
+        </div>
         <div class="toc">
             <h3>On This Page</h3>
             <ul id="toc-list"></ul>
         </div>
+
         <script>
             document.addEventListener("DOMContentLoaded", () => {
                 const headers = document.querySelectorAll(
@@ -149,7 +241,6 @@
                 const tocList = document.getElementById("toc-list");
 
                 headers.forEach((header) => {
-                    // Use existing id if present, otherwise generate a new one
                     let id = header.id;
                     if (!id) {
                         id = header.textContent
@@ -159,7 +250,6 @@
                             .replace(/-+/g, "-");
                         let uniqueId = id;
                         let counter = 1;
-                        // Ensure the generated id is unique
                         while (document.getElementById(uniqueId)) {
                             uniqueId = id + "-" + counter;
                             counter++;
@@ -167,7 +257,6 @@
                         header.id = uniqueId;
                     }
 
-                    // Create TOC entry
                     const li = document.createElement("li");
                     const indent =
                         header.tagName === "H3"
@@ -178,6 +267,15 @@
                     li.style.marginLeft = `${indent}px`;
                     li.innerHTML = `<a href="#${header.id}">${header.textContent}</a>`;
                     tocList.appendChild(li);
+                });
+
+                const menuToggle = document.querySelector(".menu-toggle");
+                const sidebar = document.querySelector(".sidebar");
+                const toc = document.querySelector(".toc");
+
+                menuToggle.addEventListener("click", () => {
+                    sidebar.classList.toggle("active");
+                    toc.classList.toggle("active");
                 });
             });
         </script>
