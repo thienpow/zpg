@@ -11,13 +11,25 @@
             rel="stylesheet"
         />
         <style>
+            @font-face {
+                font-family: "Liberation Mono";
+                src: url("fonts/LiberationMono-Regular.ttf") format("truetype");
+                font-weight: normal;
+                font-style: normal;
+            }
+            @font-face {
+                font-family: "Liberation Mono";
+                src: url("fonts/LiberationMono-Bold.ttf") format("truetype");
+                font-weight: bold;
+                font-style: normal;
+            }
             body {
                 font-family: "Inter", sans-serif;
                 display: flex;
                 flex-direction: row;
                 line-height: 1.6;
                 margin: 0;
-                background-color: #0d1117; /* Default dark mode */
+                background-color: #161b22; /* Default dark mode */
                 color: #c9d1d9;
             }
 
@@ -28,7 +40,7 @@
                 left: 0;
                 width: 100%;
                 height: 60px;
-                background-color: #161b22; /* GitHub dark mode header */
+                background-color: #0d1117; /* GitHub dark mode header */
                 border-bottom: 1px solid #21262d;
                 display: flex;
                 align-items: center;
@@ -55,7 +67,7 @@
                 padding: 24px;
                 box-sizing: border-box;
                 border-right: 1px solid #21262d;
-                background-color: #0d1117;
+                background-color: #161b22;
                 transition: transform 0.3s ease;
             }
             .sidebar h2 {
@@ -86,7 +98,7 @@
                 padding: 32px;
                 box-sizing: border-box;
                 margin-top: 60px; /* Adjusted for top bar */
-                background-color: #0d1117;
+                background-color: #161b22;
             }
 
             /* TOC */
@@ -125,25 +137,23 @@
 
             /* Code Styling */
             pre {
-                background-color: #0d1117;
-                border: 1px solid #21262d;
+                background-color: #21262d; /* Lighter than content (#161b22) */
+                border: 1px solid #30363d;
                 padding: 16px;
                 border-radius: 6px;
                 overflow-x: auto;
-                font-family:
-                    "SFMono-Regular", Consolas, "Courier New", monospace;
-                font-size: 12px; /* GitHub’s code font size */
+                font-family: "Liberation Mono", monospace;
+                font-size: 12px;
                 line-height: 1.5;
                 color: #c9d1d9;
             }
             code {
-                background-color: #0d1117;
-                border: 1px solid #21262d;
+                background-color: #21262d; /* Lighter than content (#161b22) */
+                border: 1px solid #30363d;
                 padding: 0.2em 0.4em;
                 border-radius: 6px;
-                font-family:
-                    "SFMono-Regular", Consolas, "Courier New", monospace;
-                font-size: 12px; /* Adjusted to match GitHub */
+                font-family: "Liberation Mono", monospace;
+                font-size: 10px;
                 color: #c9d1d9;
             }
             pre code {
