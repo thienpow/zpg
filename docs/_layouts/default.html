@@ -243,7 +243,16 @@
             <ul id="toc-list"></ul>
         </div>
 
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-zig.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+
         <script>
+            const markdownContent = `{{ content }}`;
+            document.getElementById("content").innerHTML =
+                marked.parse(markdownContent);
+
             const headers = document.querySelectorAll(
                 ".content h1, .content h2, .content h3",
             );
@@ -287,8 +296,5 @@
                 toc.classList.toggle("active");
             });
         </script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-zig.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
     </body>
 </html>
