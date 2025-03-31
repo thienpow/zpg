@@ -3,7 +3,7 @@
     <head>
         <title>{{ page.title }} | zpg Docs</title>
         <link
-            href="https://fonts.googleapis.com/css2?family=Inter&display=swap"
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
             rel="stylesheet"
         />
         <style>
@@ -13,6 +13,8 @@
                 flex-direction: row;
                 line-height: 1.6;
                 margin: 0;
+                background-color: #fff;
+                color: #1b1f23;
             }
 
             /* Sidebar */
@@ -23,15 +25,17 @@
                 top: 0;
                 height: 100vh;
                 overflow-y: auto;
-                padding: 20px;
+                padding: 24px;
                 box-sizing: border-box;
-                border-right: 1px solid #eee;
+                border-right: 1px solid #e1e4e8;
                 background-color: #fff;
                 transition: transform 0.3s ease;
             }
             .sidebar h2 {
                 margin-top: 0;
-                font-size: 1.2em;
+                font-size: 1.25em;
+                font-weight: 600;
+                color: #0d1117;
             }
             .sidebar ul {
                 list-style: none;
@@ -39,19 +43,20 @@
             }
             .sidebar li a {
                 text-decoration: none;
-                color: #333;
+                color: #1b1f23;
                 display: block;
-                padding: 5px 0;
+                padding: 8px 0;
+                font-weight: 500;
             }
             .sidebar li a:hover {
-                color: #007bff;
+                color: #149eca;
             }
 
             /* Content */
             .content {
                 width: 60%;
                 margin-left: 20%;
-                padding: 20px;
+                padding: 32px;
                 box-sizing: border-box;
             }
 
@@ -63,14 +68,16 @@
                 top: 20px;
                 height: calc(100vh - 40px);
                 overflow-y: auto;
-                padding-left: 15px;
-                background-color: #f9f9f9;
-                border-left: 1px solid #eee;
+                padding-left: 20px;
+                background-color: #fff;
+                border-left: 1px solid #e1e4e8;
                 transition: opacity 0.3s ease;
             }
             .toc h3 {
                 margin-top: 0;
                 font-size: 1.1em;
+                font-weight: 600;
+                color: #0d1117;
             }
             .toc ul {
                 list-style: none;
@@ -78,56 +85,68 @@
             }
             .toc li a {
                 text-decoration: none;
-                color: #555;
+                color: #6e7681;
                 font-size: 0.9em;
                 display: block;
-                padding: 3px 0;
+                padding: 4px 0;
+                font-weight: 400;
             }
             .toc li a:hover {
-                color: #007bff;
+                color: #149eca;
             }
 
-            /* GitHub-like Code Styling */
             pre {
-                background-color: #f6f8fa; /* GitHub's light gray background */
-                border: 1px solid #d0d7de; /* Subtle border */
-                padding: 16px; /* More spacious padding */
-                border-radius: 6px; /* Rounded corners */
-                overflow-x: auto; /* Horizontal scroll for long lines */
+                background-color: #0d1117;
+                border: 1px solid #21262d;
+                padding: 16px;
+                border-radius: 6px;
+                overflow-x: auto;
                 font-family:
                     "SFMono-Regular", Consolas, "Courier New", monospace;
-                font-size: 13px; /* Slightly smaller font */
-                line-height: 1.45; /* Matches GitHub's line spacing */
-                color: #24292e; /* Dark text color */
+                font-size: 13px;
+                line-height: 1.5;
+                color: #c9d1d9; /* Light text */
             }
             code {
-                background-color: #f6f8fa; /* Same background for inline code */
-                border: 1px solid #d0d7de;
-                padding: 0.2em 0.4em; /* Smaller padding for inline */
+                background-color: #0d1117;
+                border: 1px solid #21262d;
+                padding: 0.2em 0.4em;
                 border-radius: 6px;
                 font-family:
                     "SFMono-Regular", Consolas, "Courier New", monospace;
-                font-size: 85%; /* Slightly smaller than surrounding text */
-                color: #24292e;
+                font-size: 85%;
+                color: #c9d1d9;
             }
             pre code {
-                background-color: transparent; /* Avoid double background in pre */
-                border: none; /* No border inside pre */
-                padding: 0; /* Reset padding */
-                font-size: 100%; /* Match pre's font size */
+                background-color: transparent;
+                border: none;
+                padding: 0;
+                font-size: 100%;
             }
 
-            /* Mobile Menu Toggle */
+            .card {
+                background-color: #f6f8fa;
+                border: 1px solid #e1e4e8;
+                border-radius: 6px;
+                padding: 16px;
+                margin: 16px 0;
+            }
+
+            /* Menu Toggle */
             .menu-toggle {
                 display: none;
                 position: fixed;
-                top: 10px;
-                left: 10px;
+                top: 16px;
+                left: 16px;
                 font-size: 1.5em;
                 background: none;
                 border: none;
                 cursor: pointer;
                 z-index: 1000;
+                color: #0d1117;
+            }
+            .menu-toggle:hover {
+                color: #149eca;
             }
 
             /* Media Queries for Mobile */
@@ -147,7 +166,7 @@
                 .content {
                     width: 100%;
                     margin-left: 0;
-                    padding: 15px;
+                    padding: 20px;
                 }
                 .toc {
                     display: none;
@@ -155,7 +174,7 @@
                     position: static;
                     background-color: #fff;
                     border: none;
-                    padding: 15px;
+                    padding: 20px;
                     margin-top: 20px;
                 }
                 .toc.active {
@@ -167,13 +186,13 @@
             }
             @media (max-width: 480px) {
                 .content {
-                    padding: 10px;
+                    padding: 16px;
                 }
                 .sidebar {
-                    padding: 15px;
+                    padding: 16px;
                 }
                 .toc {
-                    padding: 10px;
+                    padding: 16px;
                 }
             }
         </style>
