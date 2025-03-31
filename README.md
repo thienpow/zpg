@@ -1,3 +1,8 @@
+### Quick start
+
+Check out the [Documentation]
+(https://thienpow.github.io/zpg/#quick-start)
+
 ### Testing `zpg`
 
 Check out the [tests/pool.zig](https://github.com/thienpow/zpg/blob/main/tests/pool.zig) file for an example of how `zpg` handles connection pooling and query execution with structs.
