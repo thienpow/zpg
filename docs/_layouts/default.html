@@ -163,6 +163,31 @@
                 font-size: 100%; /* Inherits from pre */
             }
 
+            /* Table Styling (GitHub-inspired) */
+            table {
+                width: 100%;
+                border-collapse: collapse; /* Ensures borders don't double up */
+                margin: 16px 0; /* Consistent spacing with other elements */
+            }
+            th,
+            td {
+                border: 1px solid #30363d; /* GitHub's border color in dark mode */
+                padding: 8px 16px; /* Matches GitHub's padding */
+                text-align: left; /* Default alignment like GitHub */
+                color: #c9d1d9; /* Matches body text color */
+            }
+            th {
+                background-color: #21262d; /* Slightly lighter, like code blocks */
+                font-weight: 600; /* Bold headers like GitHub */
+            }
+            td {
+                background-color: #161b22; /* Matches content background */
+            }
+            /* Optional: Hover effect like GitHub's subtle interactivity */
+            tr:hover td {
+                background-color: #1c2529; /* Slight highlight on hover */
+            }
+
             .card {
                 background-color: #161b22;
                 border: 1px solid #21262d;
