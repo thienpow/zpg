@@ -1,0 +1,65 @@
+/* Zig Syntax Highlighting Theme */
+.highlight pre {
+    background-color: #21262d; /* Matches your pre background */
+    border: 1px solid #30363d; /* Matches your pre border */
+    padding: 16px;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-family: "Liberation Mono", monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #c9d1d9; /* Default text color */
+}
+
+/* Keyword (const, var, try, defer, etc.) */
+.highlight .k {
+    color: #ff6d67; /* Bright red-orange for keywords, inspired by your accent colors */
+}
+
+/* Identifier (variable names, struct names) */
+.highlight .n {
+    color: #d4d4d4; /* Light gray for identifiers, slightly muted */
+}
+
+/* Operator (=, +, -, etc.) */
+.highlight .o {
+    color: #c9d1d9; /* Matches default text color for subtle operators */
+}
+
+/* Builtin (@import, @as, etc.) */
+.highlight .nb {
+    color: #ff6d67; /* Same as keywords for consistency with Zig’s builtins */
+}
+
+/* Punctuation ((, ), ;, ., etc.) */
+.highlight .p {
+    color: #c9d1d9; /* Matches default text color for neutral punctuation */
+}
+
+/* String ("std", "zpg", etc.) */
+.highlight .s {
+    color: #ce9178; /* Warm peach for strings, inspired by your code block colors */
+}
+
+/* Comment (// ...) */
+.highlight .c {
+    color: #6a9955; /* Muted green for comments, readable against dark background */
+}
+
+/* Property/Field (std.testing, zpg.Connection) */
+.highlight .py {
+    color: #dcdcaa; /* Soft yellow for fields, inspired by function-like styling */
+}
+
+/* Function (init, deinit, connect) */
+.highlight .nf {
+    color: #dcdcaa; /* Same yellow as properties for function calls */
+}
+
+/* Ensure code inside pre inherits these styles */
+.highlight pre code {
+    background-color: transparent;
+    border: none;
+    padding: 0;
+    font-size: 100%;
+}
