@@ -249,10 +249,6 @@
         <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
 
         <script>
-            const markdownContent = `{{ content }}`;
-            document.getElementById("content").innerHTML =
-                marked.parse(markdownContent);
-
             const headers = document.querySelectorAll(
                 ".content h1, .content h2, .content h3",
             );
@@ -295,6 +291,10 @@
                 sidebar.classList.toggle("active");
                 toc.classList.toggle("active");
             });
+
+            const markdownContent = `{{ content }}`;
+            document.getElementById("content").innerHTML =
+                marked.parse(markdownContent);
         </script>
     </body>
 </html>
