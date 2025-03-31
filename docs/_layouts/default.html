@@ -1,7 +1,8 @@
 <!doctype html>
 <html>
     <head>
-        <title>{{ page.title }}</title>
+        <title>{{ page.title }} | zpg Docs</title>
+        <!-- Added site name to title -->
         <link
             href="https://fonts.googleapis.com/css2?family=Inter&display=swap"
             rel="stylesheet"
@@ -10,29 +11,131 @@
             body {
                 font-family: "Inter", sans-serif;
                 display: flex;
+                line-height: 1.6; /* Improved readability */
             }
             .sidebar {
                 width: 20%;
                 position: fixed;
                 left: 0;
+                top: 0; /* Align to top */
+                height: 100vh; /* Full height */
+                overflow-y: auto; /* Scroll if needed */
+                padding: 20px;
+                box-sizing: border-box; /* Include padding in width */
+                border-right: 1px solid #eee; /* Subtle separator */
+            }
+            .sidebar h2 {
+                /* Add a title to the sidebar */
+                margin-top: 0;
+                font-size: 1.2em;
+            }
+            .sidebar ul {
+                list-style: none;
+                padding: 0;
+            }
+            .sidebar li a {
+                text-decoration: none;
+                color: #333;
+                display: block; /* Make links block level */
+                padding: 5px 0;
+            }
+            .sidebar li a:hover {
+                color: #007bff;
             }
             .content {
-                margin-left: 22%;
-                margin-right: 22%;
+                width: 56%; /* Adjusted width */
+                margin-left: 22%; /* Adjusted margin */
+                padding: 20px;
+                box-sizing: border-box;
             }
             .toc {
                 width: 20%;
                 position: sticky;
                 top: 20px;
-                float: right;
+                /* float: right; Removed float */
+                /* Added margin-left instead of float/margin-right on content */
+                margin-left: 78%;
+                height: calc(100vh - 40px); /* Adjust height */
+                overflow-y: auto; /* Scroll if needed */
+                padding-left: 15px;
+            }
+            .toc h3 {
+                margin-top: 0;
+                font-size: 1.1em;
+            }
+            .toc ul {
+                list-style: none;
+                padding-left: 10px; /* Indent TOC items */
+            }
+            .toc li a {
+                text-decoration: none;
+                color: #555;
+                font-size: 0.9em;
+                display: block;
+                padding: 3px 0;
+            }
+            .toc li a:hover {
+                color: #007bff;
+            }
+
+            /* Add some basic code styling */
+            pre {
+                background-color: #f8f8f8;
+                border: 1px solid #ddd;
+                padding: 10px;
+                border-radius: 4px;
+                overflow-x: auto; /* Handle long code lines */
+            }
+            code {
+                font-family: Consolas, "Courier New", monospace;
+                background-color: #f0f0f0; /* Slightly different background for inline code */
+                padding: 2px 4px;
+                border-radius: 3px;
+            }
+            pre code {
+                /* Don't double-style code inside pre */
+                background-color: transparent;
+                padding: 0;
+                border-radius: 0;
             }
         </style>
     </head>
     <body>
         <div class="sidebar">
+            <h2>zpg Docs</h2>
+            <!-- Added sidebar title -->
             <ul>
-                <li><a href="topic1">Topic 1</a></li>
-                <li><a href="topic2">Topic 2</a></li>
+                <!-- Updated Links -->
+                <li><a href="{{ site.baseurl }}/">Home</a></li>
+                <li>
+                    <a href="{{ site.baseurl }}/configuration.html"
+                        >Configuration</a
+                    >
+                </li>
+                <li>
+                    <a href="{{ site.baseurl }}/connections.html"
+                        >Connections</a
+                    >
+                </li>
+                <li><a href="{{ site.baseurl }}/querying.html">Querying</a></li>
+                <li>
+                    <a href="{{ site.baseurl }}/data_types.html">Data Types</a>
+                </li>
+                <li>
+                    <a href="{{ site.baseurl }}/transactions.html"
+                        >Transactions</a
+                    >
+                </li>
+                <li><a href="{{ site.baseurl }}/tls.html">TLS/SSL</a></li>
+                <li>
+                    <a href="{{ site.baseurl }}/authentication.html"
+                        >Authentication</a
+                    >
+                </li>
+                <li>
+                    <a href="{{ site.baseurl }}/rls.html">Row-Level Security</a>
+                </li>
+                <!-- Add more links as needed -->
             </ul>
         </div>
         <div class="content">{{ content }}</div>
@@ -42,11 +145,35 @@
         </div>
         <script>
             document.addEventListener("DOMContentLoaded", () => {
-                const headers = document.querySelectorAll("h1, h2, h3");
+                const headers = document.querySelectorAll(
+                    ".content h1, .content h2, .content h3",
+                ); // Target content headers
                 const tocList = document.getElementById("toc-list");
                 headers.forEach((header, index) => {
-                    header.id = "header-" + index;
+                    // Create unique, URL-friendly IDs
+                    let id = header.textContent
+                        .toLowerCase()
+                        .replace(/[^\w\s-]/g, "") // Remove non-alphanumeric/space/hyphen
+                        .replace(/\s+/g, "-") // Replace spaces with hyphens
+                        .replace(/-+/g, "-"); // Replace multiple hyphens with one
+                    // Ensure uniqueness if needed (e.g., duplicate headers)
+                    let uniqueId = id;
+                    let counter = 1;
+                    while (document.getElementById(uniqueId)) {
+                        uniqueId = id + "-" + counter;
+                        counter++;
+                    }
+                    header.id = uniqueId;
+
                     const li = document.createElement("li");
+                    // Basic indentation based on heading level
+                    const indent =
+                        header.tagName === "H3"
+                            ? 15
+                            : header.tagName === "H2"
+                              ? 5
+                              : 0;
+                    li.style.marginLeft = indent + "px";
                     li.innerHTML = `<a href="#${header.id}">${header.textContent}</a>`;
                     tocList.appendChild(li);
                 });
