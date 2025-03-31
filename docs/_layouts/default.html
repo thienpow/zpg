@@ -146,22 +146,28 @@
                 const headers = document.querySelectorAll(
                     ".content h1, .content h2, .content h3",
                 );
-                console.log("Found headers:", headers.length, headers); // Debug output
                 const tocList = document.getElementById("toc-list");
-                console.log("TOC list element:", tocList); // Verify the element exists
-                headers.forEach((header, index) => {
-                    let id = header.textContent
-                        .toLowerCase()
-                        .replace(/[^\w\s-]/g, "")
-                        .replace(/\s+/g, "-")
-                        .replace(/-+/g, "-");
-                    let uniqueId = id;
-                    let counter = 1;
-                    while (document.getElementById(uniqueId)) {
-                        uniqueId = id + "-" + counter;
-                        counter++;
+
+                headers.forEach((header) => {
+                    // Use existing id if present, otherwise generate a new one
+                    let id = header.id;
+                    if (!id) {
+                        id = header.textContent
+                            .toLowerCase()
+                            .replace(/[^\w\s-]/g, "")
+                            .replace(/\s+/g, "-")
+                            .replace(/-+/g, "-");
+                        let uniqueId = id;
+                        let counter = 1;
+                        // Ensure the generated id is unique
+                        while (document.getElementById(uniqueId)) {
+                            uniqueId = id + "-" + counter;
+                            counter++;
+                        }
+                        header.id = uniqueId;
                     }
-                    header.id = uniqueId;
+
+                    // Create TOC entry
                     const li = document.createElement("li");
                     const indent =
                         header.tagName === "H3"
@@ -169,7 +175,7 @@
                             : header.tagName === "H2"
                               ? 5
                               : 0;
-                    li.style.marginLeft = indent + "px";
+                    li.style.marginLeft = `${indent}px`;
                     li.innerHTML = `<a href="#${header.id}">${header.textContent}</a>`;
                     tocList.appendChild(li);
                 });
