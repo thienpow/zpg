@@ -50,7 +50,7 @@
                 position: fixed;
                 left: 0;
                 top: 60px; /* Adjusted for top bar */
-                height: calc(100vh - 60px);
+                height: 100vh;
                 overflow-y: auto;
                 padding: 24px;
                 box-sizing: border-box;
@@ -320,10 +320,6 @@
                 sidebar.classList.toggle("active");
                 toc.classList.toggle("active");
             });
-
-            const markdownContent = `{{ content }}`;
-            document.getElementById("content").innerHTML =
-                marked.parse(markdownContent);
         </script>
     </body>
 </html>
