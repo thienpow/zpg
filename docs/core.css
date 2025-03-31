@@ -11,7 +11,7 @@
     font-style: normal;
 }
 body {
-    font-family: "Inter", sans-serif;
+    font-family: "Noto Sans", sans-serif;
     display: flex;
     flex-direction: row;
     line-height: 1.6;
@@ -43,7 +43,7 @@ body {
 }
 .top-bar h6 {
     margin: 0;
-    font-size: 12x;
+    font-size: 14;
     color: #c9d1d9;
 }
 .top-bar h6 .page-title {
