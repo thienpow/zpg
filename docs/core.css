@@ -44,6 +44,7 @@ body {
 .top-bar a {
     margin: 0;
     color: #c9d1d9;
+    text-decoration: none;
 }
 .top-bar .page-title {
     margin: 0;
