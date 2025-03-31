@@ -1,0 +1,63 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Gradient -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e3a8a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#3b0764;stop-opacity:1" />
+    </linearGradient>
+    <!-- Gradient for the "z" -->
+    <linearGradient id="zGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
+    </linearGradient>
+    <!-- Gradient for "pg" -->
+    <linearGradient id="pgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#60a5fa;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#a78bfa;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="200" height="200" fill="url(#bgGradient)" />
+
+  <!-- Stylized "z" -->
+  <path
+    d="M40 40 H120 L40 100 H120 L40 160"
+    stroke="url(#zGradient)"
+    stroke-width="20"
+    fill="none"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Stylized "p" -->
+  <path
+    d="M130 40 V100 A20 20 0 0 1 110 120 H90 V40 H130 Z"
+    fill="url(#pgGradient)"
+  />
+
+  <!-- Stylized "g" -->
+  <path
+    d="M150 80 A20 20 0 0 1 130 100 H110 V140 A20 20 0 0 0 150 140 V120 A10 10 0 0 1 160 110 V100 A20 20 0 0 1 150 80 Z"
+    fill="url(#pgGradient)"
+  />
+
+  <!-- Abstract Zig-inspired code lines on the "z" -->
+  <path
+    d="M50 50 H60 M70 50 H80 M90 50 H100"
+    stroke="#ffffff"
+    stroke-width="2"
+    stroke-opacity="0.5"
+  />
+  <path
+    d="M50 110 H60 M70 110 H80 M90 110 H100"
+    stroke="#ffffff"
+    stroke-width="2"
+    stroke-opacity="0.5"
+  />
+
+  <!-- PostgreSQL-inspired database symbol (table grid) on "pg" -->
+  <rect x="110" y="50" width="20" height="20" fill="none" stroke="#ffffff" stroke-width="2" stroke-opacity="0.5" />
+  <line x1="110" y1="60" x2="130" y2="60" stroke="#ffffff" stroke-width="2" stroke-opacity="0.5" />
+  <line x1="120" y1="50" x2="120" y2="70" stroke="#ffffff" stroke-width="2" stroke-opacity="0.5" />
+</svg>
