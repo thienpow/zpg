@@ -43,8 +43,8 @@
                 color: #007bff;
             }
             .content {
-                width: 56%; /* Adjusted width */
-                margin-left: 22%; /* Adjusted margin */
+                width: 60%; /* Reduced from 56% */
+                margin-left: 20%; /* Match sidebar width */
                 padding: 20px;
                 box-sizing: border-box;
             }
@@ -52,11 +52,9 @@
                 width: 20%;
                 position: sticky;
                 top: 20px;
-                /* float: right; Removed float */
-                /* Added margin-left instead of float/margin-right on content */
                 margin-left: 78%;
-                height: calc(100vh - 40px); /* Adjust height */
-                overflow-y: auto; /* Scroll if needed */
+                height: calc(100vh - 40px);
+                overflow-y: auto;
                 padding-left: 15px;
             }
             .toc h3 {
@@ -147,16 +145,16 @@
             document.addEventListener("DOMContentLoaded", () => {
                 const headers = document.querySelectorAll(
                     ".content h1, .content h2, .content h3",
-                ); // Target content headers
+                );
+                console.log("Found headers:", headers.length, headers); // Debug output
                 const tocList = document.getElementById("toc-list");
+                console.log("TOC list element:", tocList); // Verify the element exists
                 headers.forEach((header, index) => {
-                    // Create unique, URL-friendly IDs
                     let id = header.textContent
                         .toLowerCase()
-                        .replace(/[^\w\s-]/g, "") // Remove non-alphanumeric/space/hyphen
-                        .replace(/\s+/g, "-") // Replace spaces with hyphens
-                        .replace(/-+/g, "-"); // Replace multiple hyphens with one
-                    // Ensure uniqueness if needed (e.g., duplicate headers)
+                        .replace(/[^\w\s-]/g, "")
+                        .replace(/\s+/g, "-")
+                        .replace(/-+/g, "-");
                     let uniqueId = id;
                     let counter = 1;
                     while (document.getElementById(uniqueId)) {
@@ -164,9 +162,7 @@
                         counter++;
                     }
                     header.id = uniqueId;
-
                     const li = document.createElement("li");
-                    // Basic indentation based on heading level
                     const indent =
                         header.tagName === "H3"
                             ? 15
