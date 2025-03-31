@@ -1,11 +1,10 @@
 ### Quick start
 
-Check out the [Documentation]
-(https://thienpow.github.io/zpg/#quick-start)
+Check out the [Documentation](https://thienpow.github.io/zpg/#quick-start)
 
 ### Testing `zpg`
 
-Check out the [tests/pool.zig](https://github.com/thienpow/zpg/blob/main/tests/pool.zig) file for an example of how `zpg` handles connection pooling and query execution with structs.
+Check out the [tests/pool.zig](https://github.com/thienpow/zpg/blob/main/tests/pool.zig) for an example of how `zpg` handles connection pooling and query execution with structs.
 
 To run the test suite and verify the library's functionality, use the following commands:
 
